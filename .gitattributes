@@ -1,0 +1,4 @@
+src/database/food.json filter=lfs diff=lfs merge=lfs -text
+src/database/recipes_crop.csv filter=lfs diff=lfs merge=lfs -text
+src/database.foods.json filter=lfs diff=lfs merge=lfs -text
+src/database/foods.json filter=lfs diff=lfs merge=lfs -text
