@@ -1,5 +1,15 @@
 const { db, auth } = require('../config/firebase');
 const { nanoid } = require('nanoid');
+const jwt = require('jsonwebtoken');
+const sessionManager = require('../utils/sessionManager');
+require('dotenv').config();
+
+const getJWTSecret = () => {
+    if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET tidak ditemukan di environment variables');
+    }
+    return process.env.JWT_SECRET;
+};
 
 const register = async (request, h) => {
     try {
@@ -89,7 +99,21 @@ const register = async (request, h) => {
         await db.collection('users').doc(userRecord.uid).set(userData);
         await db.collection('user_profiles').doc(userProfileData.id).set(userProfileData);
 
-        const customToken = await auth.createCustomToken(userRecord.uid);
+        const sessionToken = jwt.sign(
+            { 
+                uid: userRecord.uid, 
+                email: email,
+                role: 'user' 
+            }, 
+            getJWTSecret(), 
+            { expiresIn: '24h' }
+        );
+
+        sessionManager.set(sessionToken, {
+            uid: userRecord.uid,
+            email: email,
+            createdAt: Date.now()
+        });
 
         return h.response({
             status: 'success',
@@ -98,12 +122,20 @@ const register = async (request, h) => {
                 userId: userRecord.uid,
                 email: userData.email,
                 profile: userProfileData,
-                customToken: customToken,
-                instructions: 'Gunakan customToken untuk sign in dengan Firebase Client SDK dan dapatkan ID token'
+                accessToken: sessionToken,
+                tokenType: 'Bearer'
             }
         }).code(201);
 
     } catch (error) {
+        if (error.message === 'JWT_SECRET tidak ditemukan di environment variables') {
+            console.error('JWT_SECRET missing');
+            return h.response({
+                status: 'error',
+                message: 'Konfigurasi server tidak lengkap'
+            }).code(500);
+        }
+
         if (error.code === 'auth/email-already-exists') {
             return h.response({
                 status: 'fail',
@@ -141,8 +173,6 @@ const login = async (request, h) => {
         }
 
         const userRecord = await auth.getUserByEmail(email);
-        
-        const customToken = await auth.createCustomToken(userRecord.uid);
 
         const userDoc = await db.collection('users').doc(userRecord.uid).get();
         const profileQuery = await db.collection('user_profiles')
@@ -160,20 +190,44 @@ const login = async (request, h) => {
             profileData = profileQuery.docs[0].data();
         }
 
+        const sessionToken = jwt.sign(
+            { 
+                uid: userRecord.uid, 
+                email: userRecord.email,
+                role: userData?.role || 'user'
+            }, 
+            getJWTSecret(), 
+            { expiresIn: '24h' }
+        );
+
+        sessionManager.set(sessionToken, {
+            uid: userRecord.uid,
+            email: userRecord.email,
+            createdAt: Date.now()
+        });
+
         return h.response({
             status: 'success',
             message: 'Login berhasil',
             data: {
                 userId: userRecord.uid,
                 email: userRecord.email,
-                customToken: customToken,
                 user: userData,
                 profile: profileData,
-                instructions: 'Gunakan customToken untuk sign in dengan Firebase Client SDK dan dapatkan ID token'
+                accessToken: sessionToken,
+                tokenType: 'Bearer'
             }
         }).code(200);
 
     } catch (error) {
+        if (error.message === 'JWT_SECRET tidak ditemukan di environment variables') {
+            console.error('JWT_SECRET missing');
+            return h.response({
+                status: 'error',
+                message: 'Konfigurasi server tidak lengkap'
+            }).code(500);
+        }
+
         if (error.code === 'auth/user-not-found') {
             return h.response({
                 status: 'fail',
@@ -196,20 +250,27 @@ const login = async (request, h) => {
 
 const verifyToken = async (request, h) => {
     try {
-        const { idToken } = request.payload;
-
-        if (!idToken) {
+        const token = request.headers.authorization?.replace('Bearer ', '');
+        
+        if (!token) {
             return h.response({
                 status: 'fail',
-                message: 'ID token wajib diisi'
+                message: 'Token tidak ditemukan'
             }).code(400);
         }
 
-        const decodedToken = await auth.verifyIdToken(idToken);
+        const decoded = jwt.verify(token, getJWTSecret());
+        
+        if (!sessionManager.has(token)) {
+            return h.response({
+                status: 'fail',
+                message: 'Session tidak valid atau sudah expired'
+            }).code(401);
+        }
 
-        const userDoc = await db.collection('users').doc(decodedToken.uid).get();
+        const userDoc = await db.collection('users').doc(decoded.uid).get();
         const profileQuery = await db.collection('user_profiles')
-            .where('user_id', '==', decodedToken.uid)
+            .where('user_id', '==', decoded.uid)
             .get();
 
         let userData = null;
@@ -228,11 +289,11 @@ const verifyToken = async (request, h) => {
             message: 'Token valid',
             data: {
                 tokenInfo: {
-                    uid: decodedToken.uid,
-                    email: decodedToken.email,
-                    emailVerified: decodedToken.email_verified,
-                    iat: decodedToken.iat,
-                    exp: decodedToken.exp
+                    uid: decoded.uid,
+                    email: decoded.email,
+                    role: decoded.role,
+                    iat: decoded.iat,
+                    exp: decoded.exp
                 },
                 user: userData,
                 profile: profileData
@@ -240,17 +301,20 @@ const verifyToken = async (request, h) => {
         }).code(200);
 
     } catch (error) {
-        if (error.code === 'auth/id-token-expired') {
+        if (error.message === 'JWT_SECRET tidak ditemukan di environment variables') {
+            console.error('JWT_SECRET missing');
+            return h.response({
+                status: 'error',
+                message: 'Konfigurasi server tidak lengkap'
+            }).code(500);
+        }
+
+        if (error.name === 'TokenExpiredError') {
             return h.response({
                 status: 'fail',
                 message: 'Token sudah expired'
             }).code(401);
-        } else if (error.code === 'auth/id-token-revoked') {
-            return h.response({
-                status: 'fail',
-                message: 'Token sudah dicabut'
-            }).code(401);
-        } else if (error.code === 'auth/argument-error') {
+        } else if (error.name === 'JsonWebTokenError') {
             return h.response({
                 status: 'fail',
                 message: 'Format token tidak valid'
@@ -267,13 +331,15 @@ const verifyToken = async (request, h) => {
 
 const logout = async (request, h) => {
     try {
-        const userId = request.user.uid;
-
-        await auth.revokeRefreshTokens(userId);
+        const token = request.headers.authorization?.replace('Bearer ', '');
+        
+        if (token && sessionManager.has(token)) {
+            sessionManager.delete(token);
+        }
 
         return h.response({
             status: 'success',
-            message: 'Logout berhasil, semua token telah dicabut'
+            message: 'Logout berhasil'
         }).code(200);
 
     } catch (error) {
@@ -289,5 +355,5 @@ module.exports = {
     register,
     login,
     verifyToken,
-    logout
+    logout,
 };
