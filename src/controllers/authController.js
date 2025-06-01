@@ -21,7 +21,8 @@ const register = async (request, h) => {
             height, 
             gender, 
             age, 
-            fitness_level 
+            fitness_level,
+            target_weight
         } = request.payload;
 
         if (!email || !password || !name || !weight || !height || !gender || !age || !fitness_level) {
@@ -67,7 +68,21 @@ const register = async (request, h) => {
             'daily': 1.9
         };
         
-        const daily_calorie_target = Math.round(bmr * activityMultipliers[fitness_level]);
+        let daily_calorie_target = Math.round(bmr * activityMultipliers[fitness_level]);
+
+        if (target_weight && target_weight !== weight) {
+            if (target_weight < weight) {
+                daily_calorie_target = Math.round(daily_calorie_target - 500);
+
+                const minCalories = gender === 'female' ? 1200 : 1500;
+
+                if (daily_calorie_target < minCalories) {
+                    daily_calorie_target = minCalories;
+                }
+            } else if (target_weight > weight) {
+                daily_calorie_target = Math.round(daily_calorie_target + 400);
+            }
+        }
 
         const timestamp = new Date().toISOString();
 
@@ -95,6 +110,10 @@ const register = async (request, h) => {
             created_at: timestamp,
             updated_at: timestamp
         };
+
+        if (target_weight) {
+            userProfileData.target_weight = parseInt(target_weight);
+        }
 
         await db.collection('users').doc(userRecord.uid).set(userData);
         await db.collection('user_profiles').doc(userProfileData.id).set(userProfileData);

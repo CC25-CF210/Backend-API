@@ -89,17 +89,26 @@ const updateUserProfile = async (request, h) => {
         if (name) updatedProfile.name = name;
         if (weight) updatedProfile.weight = parseInt(weight);
         if (height) updatedProfile.height = parseInt(height);
-        if (target_weight) updatedProfile.target_weight = parseInt(target_weight);
+        if (target_weight !== undefined) {
+            if (target_weight === null || target_weight === '') {
+                delete updatedProfile.target_weight;
+            } else {
+                updatedProfile.target_weight = parseInt(target_weight);
+            }
+        }
         if (fitness_level) updatedProfile.fitness_level = fitness_level;
         if (daily_protein_target) updatedProfile.daily_protein_target = parseInt(daily_protein_target);
         if (daily_carbs_target) updatedProfile.daily_carbs_target = parseInt(daily_carbs_target);
         if (daily_fat_target) updatedProfile.daily_fat_target = parseInt(daily_fat_target);
 
-        if (weight || height || fitness_level) {
+        if (weight || height || fitness_level || target_weight !== undefined) {
             const { gender, age } = currentProfile;
             const newWeight = weight ? parseInt(weight) : currentProfile.weight;
             const newHeight = height ? parseInt(height) : currentProfile.height;
             const newFitnessLevel = fitness_level || currentProfile.fitness_level;
+            const newTargetWeight = target_weight !== undefined ? 
+                (target_weight === null || target_weight === '' ? null : parseInt(target_weight)) :
+                currentProfile.target_weight;
             
             let bmr;
             if (gender === 'male') {
@@ -117,7 +126,22 @@ const updateUserProfile = async (request, h) => {
             };
             
             updatedProfile.bmr = bmr;
-            updatedProfile.daily_calorie_target = Math.round(bmr * activityMultipliers[newFitnessLevel]);
+            let daily_calorie_target = Math.round(bmr * activityMultipliers[newFitnessLevel]);
+
+            if (newTargetWeight && newTargetWeight !== newWeight) {
+                if (newTargetWeight < newWeight) {
+                    daily_calorie_target = Math.round(daily_calorie_target - 500);
+
+                    const minCalories = gender === 'female' ? 1200 : 1500;
+                    if (daily_calorie_target < minCalories) {
+                        daily_calorie_target = minCalories;
+                    }
+                } else if (newTargetWeight > newWeight) {
+                    daily_calorie_target = Math.round(daily_calorie_target + 400);
+                }
+            }
+
+            updatedProfile.daily_calorie_target = daily_calorie_target;
         }
 
         await db.collection('user_profiles').doc(profileDoc.id).update(updatedProfile);
