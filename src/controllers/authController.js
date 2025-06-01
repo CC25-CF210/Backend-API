@@ -111,7 +111,7 @@ const register = async (request, h) => {
             updated_at: timestamp
         };
 
-        if (target_weight) {
+        if (target_weight !== undefined && target_weight !== null && target_weight !== '') {
             userProfileData.target_weight = parseInt(target_weight);
         }
 
