@@ -158,7 +158,7 @@ const getMealEntries = async (request, h) => {
       query = query.where('meal_type', '==', meal_type);
     }
 
-    const snapshot = await query.orderBy('consumed_at', 'desc').get();
+    const snapshot = await query.get();
     const mealEntries = [];
 
     for (const doc of snapshot.docs) {
@@ -184,6 +184,8 @@ const getMealEntries = async (request, h) => {
         food_details: foodData
       });
     }
+
+    mealEntries.sort((a, b) => new Date(b.consumed_at) - new Date(a.consumed_at));
 
     return h.response({
       status: 'success',
@@ -231,7 +233,6 @@ const getDailyLog = async (request, h) => {
 
     const mealEntriesSnapshot = await db.collection('meal_entries')
       .where('daily_log_id', '==', dailyLog.id)
-      .orderBy('consumed_at', 'asc')
       .get();
 
     const mealEntries = [];
@@ -258,6 +259,8 @@ const getDailyLog = async (request, h) => {
         food_details: foodData
       });
     }
+
+    mealEntries.sort((a, b) => new Date(a.consumed_at) - new Date(b.consumed_at));
 
     return h.response({
       status: 'success',
