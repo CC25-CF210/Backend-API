@@ -61,45 +61,59 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, limit = 50, offset = 0 } = request.query;
+        const { name, verified, limit, offset = 0 } = request.query;
 
         let query = db.collection('food_items');
-
-        if (name) {
-            query = query.orderBy('food_name');
-        }
 
         if (verified !== undefined) {
             query = query.where('is_verified', '==', verified === '1');
         }
 
-        query = query.limit(parseInt(limit)).offset(parseInt(offset));
+        if (name) {
+            query = query.orderBy('food_name');
+        }
+
+        if (limit) {
+            query = query.limit(parseInt(limit));
+            if (offset) {
+                query = query.offset(parseInt(offset));
+            }
+        }
         
         const snapshot = await query.get();
         let foods = [];
 
         snapshot.forEach(doc => {
             const data = doc.data();
+            
             if (!name || data.food_name.toLowerCase().includes(name.toLowerCase())) {
-                foods.push(data);
+                foods.push({
+                    id: data.id,
+                    food_name: data.food_name,
+                    calories_per_serving: data.calories_per_serving,
+                    protein_per_serving: data.protein_per_serving,
+                    carbs_per_serving: data.carbs_per_serving,
+                    fat_per_serving: data.fat_per_serving,
+                    serving_size: data.serving_size,
+                    serving_unit: data.serving_unit,
+                    image_url: data.image_url,
+                    is_verified: data.is_verified,
+                    fatsecret_id: data.fatsecret_id
+                });
             }
         });
 
         return h.response({
             status: 'success',
             data: {
-                foods: foods.map(food => ({
-                id: food.id,
-                food_name: food.food_name,
-                calories_per_serving: food.calories_per_serving,
-                serving_size: food.serving_size,
-                serving_unit: food.serving_unit,
-                image_url: food.image_url
-                }))
+                foods: foods,
+                total: foods.length,
+                hasMore: limit ? foods.length === parseInt(limit) : false
             }
         }).code(200);
 
     } catch (error) {
+        console.error('Error getting foods:', error);
         return h.response({
             status: 'error',
             message: error.message
