@@ -61,7 +61,21 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, limit, offset = 0 } = request.query;
+        const { name, verified, page = 1 } = request.query;
+        
+        const per_page = 10;
+        const max_offset = 9; 
+        const max_total_data = 100; 
+        
+        const currentPage = Math.max(1, parseInt(page));
+        const offset = (currentPage - 1) % (max_offset + 1); 
+        
+        if (offset > max_offset) {
+            return h.response({
+                status: 'fail',
+                message: `Offset tidak boleh lebih dari ${max_offset}`
+            }).code(400);
+        }
 
         let query = db.collection('food_items');
 
@@ -71,49 +85,66 @@ const getAllFoods = async (request, h) => {
 
         if (name) {
             query = query.orderBy('food_name');
+        } else {
+            query = query.orderBy('created_at', 'desc');
         }
 
-        if (limit) {
-            query = query.limit(parseInt(limit));
-            if (offset) {
-                query = query.offset(parseInt(offset));
-            }
+        const countQuery = db.collection('food_items');
+        let countFilteredQuery = countQuery;
+        
+        if (verified !== undefined) {
+            countFilteredQuery = countFilteredQuery.where('is_verified', '==', verified === '1');
         }
+
+        const countSnapshot = await countFilteredQuery.get();
+        const totalFoods = Math.min(countSnapshot.size, max_total_data);
+        const totalPages = Math.ceil(totalFoods / per_page);
+
+        query = query.offset(offset * per_page).limit(per_page);
         
         const snapshot = await query.get();
         let foods = [];
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            
             if (!name || data.food_name.toLowerCase().includes(name.toLowerCase())) {
-                foods.push({
-                    id: data.id,
-                    food_name: data.food_name,
-                    calories_per_serving: data.calories_per_serving,
-                    protein_per_serving: data.protein_per_serving,
-                    carbs_per_serving: data.carbs_per_serving,
-                    fat_per_serving: data.fat_per_serving,
-                    serving_size: data.serving_size,
-                    serving_unit: data.serving_unit,
-                    image_url: data.image_url,
-                    is_verified: data.is_verified,
-                    fatsecret_id: data.fatsecret_id
-                });
+                foods.push(data);
             }
         });
+
+        const hasNextPage = currentPage < totalPages && offset < max_offset;
+        const hasPrevPage = currentPage > 1;
+        const nextPage = hasNextPage ? currentPage + 1 : null;
+        const prevPage = hasPrevPage ? currentPage - 1 : null;
 
         return h.response({
             status: 'success',
             data: {
-                foods: foods,
-                total: foods.length,
-                hasMore: limit ? foods.length === parseInt(limit) : false
+                foods: foods.map(food => ({
+                    id: food.id,
+                    food_name: food.food_name,
+                    calories_per_serving: food.calories_per_serving,
+                    serving_size: food.serving_size,
+                    serving_unit: food.serving_unit,
+                    image_url: food.image_url
+                })),
+                pagination: {
+                    current_page: currentPage,
+                    per_page: per_page,
+                    total_pages: totalPages,
+                    total_foods: totalFoods,
+                    current_offset: offset,
+                    max_offset: max_offset,
+                    has_next_page: hasNextPage,
+                    has_prev_page: hasPrevPage,
+                    next_page: nextPage,
+                    prev_page: prevPage,
+                    max_total_data: max_total_data
+                }
             }
         }).code(200);
 
     } catch (error) {
-        console.error('Error getting foods:', error);
         return h.response({
             status: 'error',
             message: error.message
@@ -273,9 +304,26 @@ const createUserCustomFood = async (request, h) => {
 const getUserCustomFoods = async (request, h) => {
     try {
         const userId = request.user.uid;
+        const { page = 1 } = request.query;
+        
+        const per_page = 10;
+        const max_offset = 9;
+        
+        const currentPage = Math.max(1, parseInt(page));
+        const offset = (currentPage - 1) % (max_offset + 1);
+
+        const countSnapshot = await db.collection('user_custom_foods')
+            .where('user_id', '==', userId)
+            .get();
+        
+        const totalCustomFoods = Math.min(countSnapshot.size, 100);
+        const totalPages = Math.ceil(totalCustomFoods / per_page);
 
         const snapshot = await db.collection('user_custom_foods')
             .where('user_id', '==', userId)
+            .orderBy('created_at', 'desc')
+            .offset(offset * per_page)
+            .limit(per_page)
             .get();
 
         const customFoods = [];
@@ -283,10 +331,25 @@ const getUserCustomFoods = async (request, h) => {
             customFoods.push(doc.data());
         });
 
+        const hasNextPage = currentPage < totalPages && offset < max_offset;
+        const hasPrevPage = currentPage > 1;
+
         return h.response({
             status: 'success',
             data: {
-                custom_foods: customFoods
+                custom_foods: customFoods,
+                pagination: {
+                    current_page: currentPage,
+                    per_page: per_page,
+                    total_pages: totalPages,
+                    total_custom_foods: totalCustomFoods,
+                    current_offset: offset,
+                    max_offset: max_offset,
+                    has_next_page: hasNextPage,
+                    has_prev_page: hasPrevPage,
+                    next_page: hasNextPage ? currentPage + 1 : null,
+                    prev_page: hasPrevPage ? currentPage - 1 : null
+                }
             }
         }).code(200);
 
