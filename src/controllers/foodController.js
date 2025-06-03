@@ -61,85 +61,108 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, page = 1 } = request.query;
+        const { name, verified, limit = 10, cursor, direction = 'next' } = request.query;
         
-        const per_page = 10;
-        const max_offset = 9; 
-        const max_total_data = 100; 
+        const pageLimit = Math.min(parseInt(limit), 10);
         
-        const currentPage = Math.max(1, parseInt(page));
-        const offset = (currentPage - 1) % (max_offset + 1); 
-        
-        if (offset > max_offset) {
-            return h.response({
-                status: 'fail',
-                message: `Offset tidak boleh lebih dari ${max_offset}`
-            }).code(400);
-        }
-
         let query = db.collection('food_items');
 
         if (verified !== undefined) {
             query = query.where('is_verified', '==', verified === '1');
         }
 
+        let orderByField, orderDirection;
         if (name) {
-            query = query.orderBy('food_name');
+            orderByField = 'food_name';
+            orderDirection = 'asc';
+            query = query.orderBy('food_name', 'asc');
         } else {
+            orderByField = 'created_at';
+            orderDirection = 'desc';
             query = query.orderBy('created_at', 'desc');
         }
 
-        const countQuery = db.collection('food_items');
-        let countFilteredQuery = countQuery;
-        
-        if (verified !== undefined) {
-            countFilteredQuery = countFilteredQuery.where('is_verified', '==', verified === '1');
+        query = query.orderBy('id', orderDirection === 'desc' ? 'desc' : 'asc');
+
+        if (cursor) {
+            try {
+                const cursorDoc = await db.collection('food_items').doc(cursor).get();
+                
+                if (cursorDoc.exists) {
+                    const cursorData = cursorDoc.data();
+                    if (direction === 'prev') {
+                        if (orderDirection === 'desc') {
+                            query = query.startAfter(cursorData[orderByField], cursorData.id);
+                        } else {
+                            query = query.endBefore(cursorData[orderByField], cursorData.id);
+                        }
+                    } else {
+                        if (orderDirection === 'desc') {
+                            query = query.startAfter(cursorData[orderByField], cursorData.id);
+                        } else {
+                            query = query.startAfter(cursorData[orderByField], cursorData.id);
+                        }
+                    }
+                }
+            } catch (cursorError) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Invalid cursor'
+                }).code(400);
+            }
         }
 
-        const countSnapshot = await countFilteredQuery.get();
-        const totalFoods = Math.min(countSnapshot.size, max_total_data);
-        const totalPages = Math.ceil(totalFoods / per_page);
-
-        query = query.offset(offset * per_page).limit(per_page);
+        query = query.limit(pageLimit + 1);
         
         const snapshot = await query.get();
         let foods = [];
+        let hasMore = false;
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (!name || data.food_name.toLowerCase().includes(name.toLowerCase())) {
-                foods.push(data);
+        snapshot.forEach((doc, index) => {
+            if (index < pageLimit) {
+                const data = doc.data();
+                if (!name || data.food_name.toLowerCase().includes(name.toLowerCase())) {
+                    foods.push({
+                        id: data.id,
+                        food_name: data.food_name,
+                        calories_per_serving: data.calories_per_serving,
+                        serving_size: data.serving_size,
+                        serving_unit: data.serving_unit,
+                        image_url: data.image_url
+                    });
+                }
+            } else {
+                hasMore = true;
             }
         });
 
-        const hasNextPage = currentPage < totalPages && offset < max_offset;
-        const hasPrevPage = currentPage > 1;
-        const nextPage = hasNextPage ? currentPage + 1 : null;
-        const prevPage = hasPrevPage ? currentPage - 1 : null;
+        if (direction === 'prev') {
+            foods.reverse();
+        }
+
+        let nextCursor = null;
+        let prevCursor = null;
+
+        if (foods.length > 0) {
+            if (hasMore && direction !== 'prev') {
+                nextCursor = foods[foods.length - 1].id;
+            }
+            if (cursor || direction === 'prev') {
+                prevCursor = foods[0].id;
+            }
+        }
 
         return h.response({
             status: 'success',
             data: {
-                foods: foods.map(food => ({
-                    id: food.id,
-                    food_name: food.food_name,
-                    calories_per_serving: food.calories_per_serving,
-                    serving_size: food.serving_size,
-                    serving_unit: food.serving_unit,
-                    image_url: food.image_url
-                })),
+                foods,
                 pagination: {
-                    current_page: currentPage,
-                    per_page: per_page,
-                    total_pages: totalPages,
-                    total_foods: totalFoods,
-                    current_offset: offset,
-                    max_offset: max_offset,
-                    has_next_page: hasNextPage,
-                    has_prev_page: hasPrevPage,
-                    next_page: nextPage,
-                    prev_page: prevPage,
-                    max_total_data: max_total_data
+                    limit: pageLimit,
+                    has_next_page: hasMore && direction !== 'prev',
+                    has_prev_page: !!cursor || direction === 'prev',
+                    next_cursor: nextCursor,
+                    prev_cursor: prevCursor,
+                    current_cursor: cursor || null
                 }
             }
         }).code(200);
@@ -304,51 +327,76 @@ const createUserCustomFood = async (request, h) => {
 const getUserCustomFoods = async (request, h) => {
     try {
         const userId = request.user.uid;
-        const { page = 1 } = request.query;
+        const { limit = 10, cursor, direction = 'next' } = request.query;
         
-        const per_page = 10;
-        const max_offset = 9;
+        const pageLimit = Math.min(parseInt(limit), 10);
         
-        const currentPage = Math.max(1, parseInt(page));
-        const offset = (currentPage - 1) % (max_offset + 1);
-
-        const countSnapshot = await db.collection('user_custom_foods')
-            .where('user_id', '==', userId)
-            .get();
-        
-        const totalCustomFoods = Math.min(countSnapshot.size, 100);
-        const totalPages = Math.ceil(totalCustomFoods / per_page);
-
-        const snapshot = await db.collection('user_custom_foods')
+        let query = db.collection('user_custom_foods')
             .where('user_id', '==', userId)
             .orderBy('created_at', 'desc')
-            .offset(offset * per_page)
-            .limit(per_page)
-            .get();
+            .orderBy('id', 'desc'); 
 
-        const customFoods = [];
-        snapshot.forEach(doc => {
-            customFoods.push(doc.data());
+        if (cursor) {
+            try {
+                const cursorDoc = await db.collection('user_custom_foods').doc(cursor).get();
+                
+                if (cursorDoc.exists && cursorDoc.data().user_id === userId) {
+                    const cursorData = cursorDoc.data();
+                    if (direction === 'prev') {
+                        query = query.endBefore(cursorData.created_at, cursorData.id);
+                    } else {
+                        query = query.startAfter(cursorData.created_at, cursorData.id);
+                    }
+                }
+            } catch (cursorError) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Invalid cursor'
+                }).code(400);
+            }
+        }
+
+        query = query.limit(pageLimit + 1);
+        
+        const snapshot = await query.get();
+        let customFoods = [];
+        let hasMore = false;
+
+        snapshot.forEach((doc, index) => {
+            if (index < pageLimit) {
+                customFoods.push(doc.data());
+            } else {
+                hasMore = true; 
+            }
         });
 
-        const hasNextPage = currentPage < totalPages && offset < max_offset;
-        const hasPrevPage = currentPage > 1;
+        if (direction === 'prev') {
+            customFoods.reverse();
+        }
+
+        let nextCursor = null;
+        let prevCursor = null;
+
+        if (customFoods.length > 0) {
+            if (hasMore && direction !== 'prev') {
+                nextCursor = customFoods[customFoods.length - 1].id;
+            }
+            if (cursor || direction === 'prev') {
+                prevCursor = customFoods[0].id;
+            }
+        }
 
         return h.response({
             status: 'success',
             data: {
                 custom_foods: customFoods,
                 pagination: {
-                    current_page: currentPage,
-                    per_page: per_page,
-                    total_pages: totalPages,
-                    total_custom_foods: totalCustomFoods,
-                    current_offset: offset,
-                    max_offset: max_offset,
-                    has_next_page: hasNextPage,
-                    has_prev_page: hasPrevPage,
-                    next_page: hasNextPage ? currentPage + 1 : null,
-                    prev_page: hasPrevPage ? currentPage - 1 : null
+                    limit: pageLimit,
+                    has_next_page: hasMore && direction !== 'prev',
+                    has_prev_page: !!cursor || direction === 'prev',
+                    next_cursor: nextCursor,
+                    prev_cursor: prevCursor,
+                    current_cursor: cursor || null
                 }
             }
         }).code(200);
