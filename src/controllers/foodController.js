@@ -63,24 +63,18 @@ const getAllFoods = async (request, h) => {
     try {
         const { name, verified, limit = 10, cursor, direction = 'next' } = request.query;
         
-        const pageLimit = Math.min(parseInt(limit), 10);
+        const pageLimit = Math.min(parseInt(limit), 50);
         
         console.log('Query params:', { name, verified, limit, cursor, direction });
         
         let query = db.collection('food_items');
 
-        let orderByField, orderDirection;
-        if (name) {
-            orderByField = 'food_name';
-            orderDirection = 'asc';
-            query = query.orderBy('food_name', 'asc');
-        } else {
-            orderByField = 'created_at';
-            orderDirection = 'desc';
-            query = query.orderBy('created_at', 'desc');
+        if (verified !== undefined) {
+            const isVerified = verified === '1' || verified === 'true' || verified === true;
+            query = query.where('is_verified', '==', isVerified);
         }
 
-        query = query.orderBy('id', orderDirection === 'desc' ? 'desc' : 'asc');
+        query = query.orderBy('created_at', 'desc');
 
         if (cursor) {
             try {
@@ -89,13 +83,9 @@ const getAllFoods = async (request, h) => {
                 if (cursorDoc.exists) {
                     const cursorData = cursorDoc.data();
                     if (direction === 'prev') {
-                        if (orderDirection === 'desc') {
-                            query = query.startAfter(cursorData[orderByField], cursorData.id);
-                        } else {
-                            query = query.endBefore(cursorData[orderByField], cursorData.id);
-                        }
+                        query = query.endBefore(cursorData.created_at);
                     } else {
-                        query = query.startAfter(cursorData[orderByField], cursorData.id);
+                        query = query.startAfter(cursorData.created_at);
                     }
                 }
             } catch (cursorError) {
@@ -107,7 +97,8 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        query = query.limit(pageLimit + 1);
+        const queryLimit = name ? pageLimit * 3 : pageLimit + 1;
+        query = query.limit(queryLimit);
         
         console.log('Executing query...');
         const snapshot = await query.get();
@@ -115,44 +106,41 @@ const getAllFoods = async (request, h) => {
         
         let foods = [];
         let hasMore = false;
+        let processedCount = 0;
 
-        snapshot.forEach((doc, index) => {
+        snapshot.forEach((doc) => {
             const data = doc.data();
-            console.log(`Document ${index}:`, { id: data.id, food_name: data.food_name });
+            console.log(`Processing document:`, { id: data.id, food_name: data.food_name });
             
-            if (index < pageLimit) {
-                let shouldInclude = true;
-                
-                if (name && !data.food_name.toLowerCase().includes(name.toLowerCase())) {
-                    shouldInclude = false;
-                }
-                
-                if (verified !== undefined) {
-                    const isVerified = verified === '1' || verified === 'true' || verified === true;
-                    if (data.is_verified !== isVerified) {
-                        shouldInclude = false;
-                    }
-                }
-                
-                if (shouldInclude) {
-                    foods.push({
-                        id: data.id,
-                        food_name: data.food_name,
-                        calories_per_serving: data.calories_per_serving,
-                        protein_per_serving: data.protein_per_serving,
-                        carbs_per_serving: data.carbs_per_serving,
-                        fat_per_serving: data.fat_per_serving,
-                        serving_size: data.serving_size,
-                        serving_unit: data.serving_unit,
-                        image_url: data.image_url,
-                        is_verified: data.is_verified,
-                        created_at: data.created_at
-                    });
-                }
-            } else {
-                hasMore = true;
+            let shouldInclude = true;
+            if (name && !data.food_name.toLowerCase().includes(name.toLowerCase())) {
+                shouldInclude = false;
             }
+            
+            if (shouldInclude && foods.length < pageLimit) {
+                foods.push({
+                    id: data.id,
+                    food_name: data.food_name,
+                    calories_per_serving: data.calories_per_serving,
+                    protein_per_serving: data.protein_per_serving,
+                    carbs_per_serving: data.carbs_per_serving,
+                    fat_per_serving: data.fat_per_serving,
+                    serving_size: data.serving_size,
+                    serving_unit: data.serving_unit,
+                    image_url: data.image_url,
+                    is_verified: data.is_verified,
+                    created_at: data.created_at
+                });
+            }
+            
+            processedCount++;
         });
+
+        if (name) {
+            hasMore = snapshot.size === queryLimit && foods.length === pageLimit;
+        } else {
+            hasMore = snapshot.size > pageLimit;
+        }
 
         if (direction === 'prev') {
             foods.reverse();
@@ -170,7 +158,12 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        console.log('Final result:', { foods_count: foods.length, hasMore });
+        console.log('Final result:', { 
+            foods_count: foods.length, 
+            hasMore, 
+            processedCount,
+            totalDocs: snapshot.size 
+        });
 
         return h.response({
             status: 'success',
