@@ -61,14 +61,18 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, limit = 10, cursor, direction = 'next', page } = request.query;
+        const { name, verified, limit = 10, cursor, direction = 'next' } = request.query;
         
         const pageLimit = Math.min(parseInt(limit), 10);
+        
+        console.log('Query params:', { name, verified, limit, cursor, direction }); // Debug log
         
         let query = db.collection('food_items');
 
         if (verified !== undefined) {
-            query = query.where('is_verified', '==', verified === '1');
+            const isVerified = verified === '1' || verified === 'true' || verified === true;
+            query = query.where('is_verified', '==', isVerified);
+            console.log('Filtering by verified:', isVerified); // Debug log
         }
 
         let orderByField, orderDirection;
@@ -97,14 +101,11 @@ const getAllFoods = async (request, h) => {
                             query = query.endBefore(cursorData[orderByField], cursorData.id);
                         }
                     } else {
-                        if (orderDirection === 'desc') {
-                            query = query.startAfter(cursorData[orderByField], cursorData.id);
-                        } else {
-                            query = query.startAfter(cursorData[orderByField], cursorData.id);
-                        }
+                        query = query.startAfter(cursorData[orderByField], cursorData.id);
                     }
                 }
             } catch (cursorError) {
+                console.error('Cursor error:', cursorError); // Debug log
                 return h.response({
                     status: 'fail',
                     message: 'Invalid cursor'
@@ -114,13 +115,18 @@ const getAllFoods = async (request, h) => {
 
         query = query.limit(pageLimit);
         
+        console.log('Executing query...'); 
         const snapshot = await query.get();
+        console.log('Query result count:', snapshot.size); 
+        
         let foods = [];
         let hasMore = false;
 
         snapshot.forEach((doc, index) => {
+            const data = doc.data();
+            console.log(`Document ${index}:`, { id: data.id, food_name: data.food_name }); // Debug log
+            
             if (index < pageLimit) {
-                const data = doc.data();
                 const shouldInclude = !name || data.food_name.toLowerCase().includes(name.toLowerCase());
                 
                 if (shouldInclude) {
@@ -130,7 +136,8 @@ const getAllFoods = async (request, h) => {
                         calories_per_serving: data.calories_per_serving,
                         serving_size: data.serving_size,
                         serving_unit: data.serving_unit,
-                        image_url: data.image_url
+                        image_url: data.image_url,
+                        is_verified: data.is_verified 
                     });
                 }
             } else {
@@ -154,6 +161,8 @@ const getAllFoods = async (request, h) => {
             }
         }
 
+        console.log('Final result:', { foods_count: foods.length, hasMore }); 
+
         return h.response({
             status: 'success',
             data: {
@@ -170,6 +179,7 @@ const getAllFoods = async (request, h) => {
         }).code(200);
 
     } catch (error) {
+        console.error('getAllFoods error:', error);
         return h.response({
             status: 'error',
             message: error.message
