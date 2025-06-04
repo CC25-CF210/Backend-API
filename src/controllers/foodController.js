@@ -61,7 +61,7 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, limit = 10, cursor, direction = 'next' } = request.query;
+        const { name, verified, limit = 10, cursor, direction = 'next', page } = request.query;
         
         const pageLimit = Math.min(parseInt(limit), 10);
         
@@ -112,7 +112,7 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        query = query.limit(pageLimit + 1);
+        query = query.limit(pageLimit);
         
         const snapshot = await query.get();
         let foods = [];
@@ -121,7 +121,9 @@ const getAllFoods = async (request, h) => {
         snapshot.forEach((doc, index) => {
             if (index < pageLimit) {
                 const data = doc.data();
-                if (!name || data.food_name.toLowerCase().includes(name.toLowerCase())) {
+                const shouldInclude = !name || data.food_name.toLowerCase().includes(name.toLowerCase());
+                
+                if (shouldInclude) {
                     foods.push({
                         id: data.id,
                         food_name: data.food_name,
