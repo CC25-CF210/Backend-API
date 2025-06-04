@@ -65,15 +65,9 @@ const getAllFoods = async (request, h) => {
         
         const pageLimit = Math.min(parseInt(limit), 10);
         
-        console.log('Query params:', { name, verified, limit, cursor, direction }); // Debug log
+        console.log('Query params:', { name, verified, limit, cursor, direction });
         
         let query = db.collection('food_items');
-
-        if (verified !== undefined) {
-            const isVerified = verified === '1' || verified === 'true' || verified === true;
-            query = query.where('is_verified', '==', isVerified);
-            console.log('Filtering by verified:', isVerified); // Debug log
-        }
 
         let orderByField, orderDirection;
         if (name) {
@@ -105,7 +99,7 @@ const getAllFoods = async (request, h) => {
                     }
                 }
             } catch (cursorError) {
-                console.error('Cursor error:', cursorError); // Debug log
+                console.error('Cursor error:', cursorError);
                 return h.response({
                     status: 'fail',
                     message: 'Invalid cursor'
@@ -113,31 +107,46 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        query = query.limit(pageLimit);
+        query = query.limit(pageLimit + 1);
         
-        console.log('Executing query...'); 
+        console.log('Executing query...');
         const snapshot = await query.get();
-        console.log('Query result count:', snapshot.size); 
+        console.log('Query result count:', snapshot.size);
         
         let foods = [];
         let hasMore = false;
 
         snapshot.forEach((doc, index) => {
             const data = doc.data();
-            console.log(`Document ${index}:`, { id: data.id, food_name: data.food_name }); // Debug log
+            console.log(`Document ${index}:`, { id: data.id, food_name: data.food_name });
             
             if (index < pageLimit) {
-                const shouldInclude = !name || data.food_name.toLowerCase().includes(name.toLowerCase());
+                let shouldInclude = true;
+                
+                if (name && !data.food_name.toLowerCase().includes(name.toLowerCase())) {
+                    shouldInclude = false;
+                }
+                
+                if (verified !== undefined) {
+                    const isVerified = verified === '1' || verified === 'true' || verified === true;
+                    if (data.is_verified !== isVerified) {
+                        shouldInclude = false;
+                    }
+                }
                 
                 if (shouldInclude) {
                     foods.push({
                         id: data.id,
                         food_name: data.food_name,
                         calories_per_serving: data.calories_per_serving,
+                        protein_per_serving: data.protein_per_serving,
+                        carbs_per_serving: data.carbs_per_serving,
+                        fat_per_serving: data.fat_per_serving,
                         serving_size: data.serving_size,
                         serving_unit: data.serving_unit,
                         image_url: data.image_url,
-                        is_verified: data.is_verified 
+                        is_verified: data.is_verified,
+                        created_at: data.created_at
                     });
                 }
             } else {
@@ -161,7 +170,7 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        console.log('Final result:', { foods_count: foods.length, hasMore }); 
+        console.log('Final result:', { foods_count: foods.length, hasMore });
 
         return h.response({
             status: 'success',
