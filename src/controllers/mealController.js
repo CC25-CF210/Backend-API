@@ -465,24 +465,77 @@ const generateMealPlan = async (request, h) => {
             }).code(400);
         }
 
-        const mlParams = new URLSearchParams({
-            total_calories: totalCalories,
-            max_plans: 3, 
-            calorie_tolerance_percent: 0.15
-        });
+        let tolerancePercent;
+        if (totalCalories <= 2000) {
+            tolerancePercent = 0.1;
+        } else if (totalCalories <= 2500) {
+            tolerancePercent = 0.2;
+        } else if (totalCalories <= 2800) {
+            tolerancePercent = 0.25;
+        } else if (totalCalories <= 3000) {
+            tolerancePercent = 0.3;
+        } else if (totalCalories <= 3500) {
+            tolerancePercent = 0.35;
+        } else {
+            tolerancePercent = 0.5;
+        }
 
-        const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
-        
-        const response = await axios.get(mlEndpoint, {
-            timeout: 30000 
-        });
+        const getMealPlanFromML = async (retryCount = 0) => {
+            const maxRetries = 5;
+            
+            try {
+                const mlParams = new URLSearchParams({
+                    total_calories: totalCalories,
+                    max_plans: 3, 
+                    calorie_tolerance_percent: tolerancePercent
+                });
+
+                const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
+                
+                const response = await axios.get(mlEndpoint, {
+                    timeout: 30000 
+                });
+
+                if (!response.data || 
+                    !Array.isArray(response.data) || 
+                    response.data.length === 0) {
+                    
+                    console.log(`Attempt ${retryCount + 1}: No meal plans returned from ML`);
+                    
+                    if (retryCount < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
+                        return await getMealPlanFromML(retryCount + 1);
+                    } else {
+                        throw new Error('Maksimal retry tercapai, ML tidak menghasilkan meal plan');
+                    }
+                }
+
+                console.log(`Success: Got ${response.data.length} meal plans from ML`);
+                return response.data;
+
+            } catch (error) {
+                if (retryCount < maxRetries && 
+                    (error.code === 'ECONNREFUSED' || 
+                     error.code === 'ENOTFOUND' || 
+                     error.code === 'ECONNABORTED')) {
+                    
+                    console.log(`Attempt ${retryCount + 1}: Connection error, retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+                    return await getMealPlanFromML(retryCount + 1);
+                }
+                throw error;
+            }
+        };
+
+        const mealPlans = await getMealPlanFromML();
 
         const responseData = {
             user_info: {
                 daily_calorie_target: totalCalories,
+                tolerance_percent: tolerancePercent,
                 user_id: userId
             },
-            meal_plans: response.data,
+            meal_plans: mealPlans,
             generated_at: new Date().toISOString()
         };
 
