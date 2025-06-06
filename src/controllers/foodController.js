@@ -59,6 +59,24 @@ const createFood = async (request, h) => {
     }
 };
 
+const isValidImageUrl = (url) => {
+    if (!url) return false;
+    
+    try {
+        new URL(url);
+    } catch {
+        return false;
+    }
+    
+    const validDomains = ['sndimg.com', 'imgur.com', 'cloudinary.com'];
+    const isValidDomain = validDomains.some(domain => url.includes(domain));
+    
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.JPG', '.JPEG', '.PNG'];
+    const hasValidExtension = imageExtensions.some(ext => url.includes(ext));
+    
+    return isValidDomain && hasValidExtension;
+};
+
 const getAllFoods = async (request, h) => {
     try {
         const { name, verified, limit = 12, cursor, direction = 'next' } = request.query;
@@ -97,7 +115,7 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        const queryLimit = name ? pageLimit * 3 : pageLimit + 1;
+        const queryLimit = name ? pageLimit * 5 : pageLimit + 1;
         query = query.limit(queryLimit);
         
         console.log('Executing query...');
@@ -107,6 +125,7 @@ const getAllFoods = async (request, h) => {
         let foods = [];
         let hasMore = false;
         let processedCount = 0;
+        let validImageCount = 0;
 
         snapshot.forEach((doc) => {
             const data = doc.data();
@@ -114,6 +133,11 @@ const getAllFoods = async (request, h) => {
             
             let shouldInclude = true;
             if (name && !data.food_name.toLowerCase().includes(name.toLowerCase())) {
+                shouldInclude = false;
+            }
+
+            if (shouldInclude && !isValidImageUrl(data.image_url)) {
+                console.log(`Invalid image URL for ${data.food_name}: ${data.image_url}`);
                 shouldInclude = false;
             }
             
@@ -131,6 +155,7 @@ const getAllFoods = async (request, h) => {
                     is_verified: data.is_verified,
                     created_at: data.created_at
                 });
+                validImageCount++;
             }
             
             processedCount++;
@@ -160,6 +185,7 @@ const getAllFoods = async (request, h) => {
 
         console.log('Final result:', { 
             foods_count: foods.length, 
+            validImageCount,
             hasMore, 
             processedCount,
             totalDocs: snapshot.size 
