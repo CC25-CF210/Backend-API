@@ -470,6 +470,8 @@ const generateMealPlan = async (request, h) => {
         let tolerancePercent;
         if (totalCalories <= 2000) {
             tolerancePercent = 0.1;
+        } else if (totalCalories <= 2300) {
+            tolerancePercent = 0.15;
         } else if (totalCalories <= 2500) {
             tolerancePercent = 0.2;
         } else if (totalCalories <= 2800) {
@@ -561,7 +563,6 @@ const generateMealPlan = async (request, h) => {
         const responseData = {
             user_info: {
                 daily_calorie_target: totalCalories,
-                tolerance_percent: tolerancePercent,
                 user_id: userId
             },
             meal_plans: mealPlans,
