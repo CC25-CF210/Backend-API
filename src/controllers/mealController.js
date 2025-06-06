@@ -568,7 +568,10 @@ const generateMealPlan = async (request, h) => {
             
             mealTypes.forEach(mealType => {
                 if (mealPlan[mealType] && mealPlan[mealType].RecipeId) {
-                    const recipeId = parseInt(mealPlan[mealType].RecipeId);
+                    const recipeId = typeof mealPlan[mealType].RecipeId === 'number' 
+                        ? mealPlan[mealType].RecipeId 
+                        : parseInt(mealPlan[mealType].RecipeId);
+                    
                     if (!isNaN(recipeId)) {
                         recipeIds.push(recipeId);
                     }
@@ -577,44 +580,38 @@ const generateMealPlan = async (request, h) => {
 
             if (recipeIds.length > 0) {
                 console.log('Fetching food details for recipe IDs:', recipeIds);
-                
-                const batchSize = 10;
+
                 const foodDetailsMap = new Map();
                 
-                for (let i = 0; i < recipeIds.length; i += batchSize) {
-                    const batch = recipeIds.slice(i, i + batchSize);
-
-                    console.log(`Querying batch ${i/batchSize + 1}:`, batch);
-                    
-                    const foodQuery = await db.collection('food_items')
-                        .where('original_recipe_id', 'in', batch)
-                        .get();
-                    
-                    console.log(`Found ${foodQuery.docs.length} food items for batch:`, batch);
-                    
-                    if (foodQuery.docs.length > 0) {
-                        foodQuery.docs.forEach(doc => {
-                            const foodData = doc.data();
-                            console.log(`Found food: ${foodData.name} with original_recipe_id: ${foodData.original_recipe_id}`);
-                            const key = parseInt(foodData.original_recipe_id);
-                            if (!isNaN(key)) {
-                                foodDetailsMap.set(key, foodData);
-                            }
-                        });
-                    } else {
-                        console.log('No matching food items found. Checking available original_recipe_ids...');
-                        console.log('Debug: Searching manually for each ID...');
-                        for (const recipeId of batch) {
-                            const debugQuery = await db.collection('food_items')
-                                .where('original_recipe_id', '==', recipeId)
-                                .get();
-                            console.log(`Manual search for ${recipeId}: ${debugQuery.docs.length} results`);
+                for (const recipeId of recipeIds) {
+                    try {
+                        console.log(`Querying individual recipe ID: ${recipeId}`);
+                        
+                        const foodQuery = await db.collection('food_items')
+                            .where('original_recipe_id', '==', recipeId)
+                            .limit(1)
+                            .get();
+                        
+                        if (!foodQuery.empty) {
+                            const foodData = foodQuery.docs[0].data();
+                            console.log(`Found food: ${foodData.name || 'Unknown'} with original_recipe_id: ${foodData.original_recipe_id}`);
+                            foodDetailsMap.set(recipeId, foodData);
+                        } else {
+                            console.log(`No food item found for original_recipe_id: ${recipeId}`);
                             
-                            const debugQuery2 = await db.collection('food_items')
+                            const debugQuery = await db.collection('food_items')
                                 .where('original_recipe_id', '==', recipeId.toString())
+                                .limit(1)
                                 .get();
-                            console.log(`Manual search for "${recipeId}" (string): ${debugQuery2.docs.length} results`);
+                            
+                            if (!debugQuery.empty) {
+                                console.log(`Found food item with string type original_recipe_id: ${recipeId}`);
+                                const foodData = debugQuery.docs[0].data();
+                                foodDetailsMap.set(recipeId, foodData);
+                            }
                         }
+                    } catch (queryError) {
+                        console.error(`Error querying recipe ID ${recipeId}:`, queryError.message);
                     }
                 }
 
@@ -622,19 +619,22 @@ const generateMealPlan = async (request, h) => {
 
                 mealTypes.forEach(mealType => {
                     if (enhancedPlan[mealType] && enhancedPlan[mealType].RecipeId) {
-                        const recipeId = enhancedPlan[mealType].RecipeId;
+                        const recipeId = typeof enhancedPlan[mealType].RecipeId === 'number' 
+                            ? enhancedPlan[mealType].RecipeId 
+                            : parseInt(enhancedPlan[mealType].RecipeId);
+                            
                         const foodDetails = foodDetailsMap.get(recipeId);
                         
                         if (foodDetails) {
-                            console.log(`Found food details for ${mealType} - RecipeId: ${recipeId}`);
+                            console.log(`Assigning food details for ${mealType} - RecipeId: ${recipeId}`);
                             enhancedPlan[mealType].food_details = {
                                 id: foodDetails.id,
-                                name: foodDetails.name,
+                                name: foodDetails.name || foodDetails.food_name,
                                 calories_per_serving: foodDetails.calories_per_serving,
                                 protein_per_serving: foodDetails.protein_per_serving,
                                 carbs_per_serving: foodDetails.carbs_per_serving,
                                 fat_per_serving: foodDetails.fat_per_serving,
-                                serving_unit: foodDetails.serving_unit,
+                                serving_size: foodDetails.serving_size,
                                 image_url: foodDetails.image_url,
                                 description: foodDetails.description,
                                 ingredients: foodDetails.ingredients,
