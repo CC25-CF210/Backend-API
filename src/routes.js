@@ -141,6 +141,14 @@ const routes = [
             pre: [{ method: authMiddleware }]
         }
     },
+    {
+        method: 'GET',
+        path: '/api/meals/generate-plan',
+        handler: mealController.generateMealPlan,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
 
     // === DAILY LOG ROUTES ===
     {
@@ -199,7 +207,8 @@ const routes = [
                         'GET /api/meals': 'Get meal entries (requires auth)',
                         'POST /api/meals': 'Create meal entry (requires auth)',
                         'PUT /api/meals/{id}': 'Update meal entry (requires auth)',
-                        'DELETE /api/meals/{id}': 'Delete meal entry (requires auth)'
+                        'DELETE /api/meals/{id}': 'Delete meal entry (requires auth)',
+                        'GET /api/meals/generate-plan': 'Generate meal plan using ML (requires auth)'
                     },
                     logs: {
                         'GET /api/logs/{date}': 'Get daily log (requires auth)'

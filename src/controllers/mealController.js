@@ -1,5 +1,6 @@
 const { db } = require('../config/firebase');
 const { nanoid } = require('nanoid');
+const axios = require('axios');
 
 const createMealEntry = async (request, h) => {
     try {
@@ -439,10 +440,95 @@ const deleteMealEntry = async (request, h) => {
     }
 };
 
+const generateMealPlan = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+
+        const profileQuery = await db.collection('user_profiles')
+            .where('user_id', '==', userId)
+            .get();
+
+        if (profileQuery.empty) {
+            return h.response({
+                status: 'fail',
+                message: 'Profil pengguna tidak ditemukan'
+            }).code(404);
+        }
+
+        const userProfile = profileQuery.docs[0].data();
+        const totalCalories = userProfile.daily_calorie_target;
+
+        if (!totalCalories) {
+            return h.response({
+                status: 'fail',
+                message: 'Target kalori harian belum diset'
+            }).code(400);
+        }
+
+        const mlParams = new URLSearchParams({
+            total_calories: totalCalories,
+            max_plans: 3, 
+            calorie_tolerance_percent: 0.5 
+        });
+
+        const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
+        
+        const response = await axios.get(mlEndpoint, {
+            timeout: 30000 
+        });
+
+        const responseData = {
+            user_info: {
+                daily_calorie_target: totalCalories,
+                user_id: userId
+            },
+            meal_plans: response.data,
+            generated_at: new Date().toISOString()
+        };
+
+        return h.response({
+            status: 'success',
+            message: 'Meal plan berhasil di-generate',
+            data: responseData
+        }).code(200);
+
+    } catch (error) {
+        console.error('Generate meal plan error:', error);
+
+        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak tersedia saat ini'
+            }).code(503);
+        }
+
+        if (error.code === 'ECONNABORTED') {
+            return h.response({
+                status: 'error',
+                message: 'Request timeout - layanan ML membutuhkan waktu terlalu lama'
+            }).code(504);
+        }
+
+        if (error.response) {
+            return h.response({
+                status: 'error',
+                message: 'Gagal generate meal plan dari layanan ML',
+                details: error.response.data
+            }).code(error.response.status || 500);
+        }
+
+        return h.response({
+            status: 'error',
+            message: 'Terjadi kesalahan saat generate meal plan'
+        }).code(500);
+    }
+};
+
 module.exports = {
     createMealEntry,
     getMealEntries,
     getDailyLog,
     updateMealEntry,
-    deleteMealEntry
+    deleteMealEntry,
+    generateMealPlan
 }
