@@ -72,9 +72,17 @@ const isValidImageUrl = (url) => {
     const isValidDomain = validDomains.some(domain => url.includes(domain));
     
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.JPG', '.JPEG', '.PNG'];
-    const hasValidExtension = imageExtensions.some(ext => url.includes(ext));
+    const hasValidExtension = imageExtensions.some(ext => url.endsWith(ext));
     
-    return isValidDomain && hasValidExtension;
+    const hasInvalidChars = url.includes('(.jpg') || url.includes('(.jpeg') || url.includes('(.png') || 
+                           url.includes('(.gif') || url.includes('(.webp') || url.includes('(.JPG') || 
+                           url.includes('(.JPEG') || url.includes('(.PNG');
+    
+    const openParenCount = (url.match(/\(/g) || []).length;
+    const closeParenCount = (url.match(/\)/g) || []).length;
+    const hasBalancedParens = openParenCount === closeParenCount;
+    
+    return isValidDomain && hasValidExtension && !hasInvalidChars && hasBalancedParens;
 };
 
 const getAllFoods = async (request, h) => {
@@ -115,7 +123,7 @@ const getAllFoods = async (request, h) => {
             }
         }
 
-        const queryLimit = name ? pageLimit * 5 : pageLimit + 1;
+        const queryLimit = name ? pageLimit * 5 : pageLimit * 3;
         query = query.limit(queryLimit);
         
         console.log('Executing query...');
