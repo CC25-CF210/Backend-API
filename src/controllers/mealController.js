@@ -560,12 +560,74 @@ const generateMealPlan = async (request, h) => {
 
         const mealPlans = await getMealPlanFromML();
 
+        const enhancedMealPlans = await Promise.all(mealPlans.map(async (mealPlan) => {
+            const enhancedPlan = { ...mealPlan };
+            
+            const recipeIds = [];
+            const mealTypes = ['Breakfast', 'Lunch', 'Dinner'];
+            
+            mealTypes.forEach(mealType => {
+                if (mealPlan[mealType] && mealPlan[mealType].RecipeId) {
+                    recipeIds.push(mealPlan[mealType].RecipeId);
+                }
+            });
+
+            if (recipeIds.length > 0) {
+                console.log('Fetching food details for recipe IDs:', recipeIds);
+                
+                const batchSize = 10;
+                const foodDetailsMap = new Map();
+                
+                for (let i = 0; i < recipeIds.length; i += batchSize) {
+                    const batch = recipeIds.slice(i, i + batchSize);
+                    
+                    const foodQuery = await db.collection('food_items')
+                        .where('original_recipe_id', 'in', batch)
+                        .get();
+                    
+                    foodQuery.docs.forEach(doc => {
+                        const foodData = doc.data();
+                        foodDetailsMap.set(foodData.original_recipe_id, foodData);
+                    });
+                }
+
+                mealTypes.forEach(mealType => {
+                    if (enhancedPlan[mealType] && enhancedPlan[mealType].RecipeId) {
+                        const recipeId = enhancedPlan[mealType].RecipeId;
+                        const foodDetails = foodDetailsMap.get(recipeId);
+                        
+                        if (foodDetails) {
+                            enhancedPlan[mealType].food_details = {
+                                id: foodDetails.id,
+                                name: foodDetails.name,
+                                calories_per_serving: foodDetails.calories_per_serving,
+                                protein_per_serving: foodDetails.protein_per_serving,
+                                carbs_per_serving: foodDetails.carbs_per_serving,
+                                fat_per_serving: foodDetails.fat_per_serving,
+                                serving_unit: foodDetails.serving_unit,
+                                image_url: foodDetails.image_url,
+                                description: foodDetails.description,
+                                ingredients: foodDetails.ingredients,
+                                instructions: foodDetails.instructions,
+                                original_recipe_id: foodDetails.original_recipe_id
+                            };
+                        } else {
+                            console.log(`Food details not found for RecipeId: ${recipeId}`);
+                            enhancedPlan[mealType].food_details = null;
+                        }
+                    }
+                });
+            }
+
+            return enhancedPlan;
+        }));
+
         const responseData = {
             user_info: {
                 daily_calorie_target: totalCalories,
                 user_id: userId
             },
-            meal_plans: mealPlans,
+            meal_plans: enhancedMealPlans,
             generated_at: new Date().toISOString()
         };
 
