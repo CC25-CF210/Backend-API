@@ -568,7 +568,10 @@ const generateMealPlan = async (request, h) => {
             
             mealTypes.forEach(mealType => {
                 if (mealPlan[mealType] && mealPlan[mealType].RecipeId) {
-                    recipeIds.push(mealPlan[mealType].RecipeId);
+                    const recipeId = parseInt(mealPlan[mealType].RecipeId);
+                    if (!isNaN(recipeId)) {
+                        recipeIds.push(recipeId);
+                    }
                 }
             });
 
@@ -593,16 +596,25 @@ const generateMealPlan = async (request, h) => {
                         foodQuery.docs.forEach(doc => {
                             const foodData = doc.data();
                             console.log(`Found food: ${foodData.name} with original_recipe_id: ${foodData.original_recipe_id}`);
-                            foodDetailsMap.set(foodData.original_recipe_id, foodData);
+                            const key = parseInt(foodData.original_recipe_id);
+                            if (!isNaN(key)) {
+                                foodDetailsMap.set(key, foodData);
+                            }
                         });
                     } else {
                         console.log('No matching food items found. Checking available original_recipe_ids...');
-                        const sampleQuery = await db.collection('food_items').limit(5).get();
-                        console.log('Sample original_recipe_ids in database:');
-                        sampleQuery.docs.forEach(doc => {
-                            const data = doc.data();
-                            console.log(`- ${data.original_recipe_id} (${data.name})`);
-                        });
+                        console.log('Debug: Searching manually for each ID...');
+                        for (const recipeId of batch) {
+                            const debugQuery = await db.collection('food_items')
+                                .where('original_recipe_id', '==', recipeId)
+                                .get();
+                            console.log(`Manual search for ${recipeId}: ${debugQuery.docs.length} results`);
+                            
+                            const debugQuery2 = await db.collection('food_items')
+                                .where('original_recipe_id', '==', recipeId.toString())
+                                .get();
+                            console.log(`Manual search for "${recipeId}" (string): ${debugQuery2.docs.length} results`);
+                        }
                     }
                 }
 
@@ -614,7 +626,7 @@ const generateMealPlan = async (request, h) => {
                         const foodDetails = foodDetailsMap.get(recipeId);
                         
                         if (foodDetails) {
-                            console.log(`✓ Found food details for ${mealType} - RecipeId: ${recipeId}`);
+                            console.log(`Found food details for ${mealType} - RecipeId: ${recipeId}`);
                             enhancedPlan[mealType].food_details = {
                                 id: foodDetails.id,
                                 name: foodDetails.name,
