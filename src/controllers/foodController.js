@@ -61,9 +61,9 @@ const createFood = async (request, h) => {
 
 const getAllFoods = async (request, h) => {
     try {
-        const { name, verified, limit = 10, cursor, direction = 'next' } = request.query;
+        const { name, verified, limit = 12, cursor, direction = 'next' } = request.query;
         
-        const pageLimit = Math.min(parseInt(limit), 50);
+        const pageLimit = Math.min(parseInt(limit), 60);
         
         console.log('Query params:', { name, verified, limit, cursor, direction });
         
