@@ -580,16 +580,33 @@ const generateMealPlan = async (request, h) => {
                 
                 for (let i = 0; i < recipeIds.length; i += batchSize) {
                     const batch = recipeIds.slice(i, i + batchSize);
+
+                    console.log(`Querying batch ${i/batchSize + 1}:`, batch);
                     
                     const foodQuery = await db.collection('food_items')
                         .where('original_recipe_id', 'in', batch)
                         .get();
                     
-                    foodQuery.docs.forEach(doc => {
-                        const foodData = doc.data();
-                        foodDetailsMap.set(foodData.original_recipe_id, foodData);
-                    });
+                    console.log(`Found ${foodQuery.docs.length} food items for batch:`, batch);
+                    
+                    if (foodQuery.docs.length > 0) {
+                        foodQuery.docs.forEach(doc => {
+                            const foodData = doc.data();
+                            console.log(`Found food: ${foodData.name} with original_recipe_id: ${foodData.original_recipe_id}`);
+                            foodDetailsMap.set(foodData.original_recipe_id, foodData);
+                        });
+                    } else {
+                        console.log('No matching food items found. Checking available original_recipe_ids...');
+                        const sampleQuery = await db.collection('food_items').limit(5).get();
+                        console.log('Sample original_recipe_ids in database:');
+                        sampleQuery.docs.forEach(doc => {
+                            const data = doc.data();
+                            console.log(`- ${data.original_recipe_id} (${data.name})`);
+                        });
+                    }
                 }
+
+                console.log(`Total food details found: ${foodDetailsMap.size}`);
 
                 mealTypes.forEach(mealType => {
                     if (enhancedPlan[mealType] && enhancedPlan[mealType].RecipeId) {
@@ -597,6 +614,7 @@ const generateMealPlan = async (request, h) => {
                         const foodDetails = foodDetailsMap.get(recipeId);
                         
                         if (foodDetails) {
+                            console.log(`✓ Found food details for ${mealType} - RecipeId: ${recipeId}`);
                             enhancedPlan[mealType].food_details = {
                                 id: foodDetails.id,
                                 name: foodDetails.name,
