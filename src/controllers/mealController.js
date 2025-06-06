@@ -468,7 +468,7 @@ const generateMealPlan = async (request, h) => {
         const mlParams = new URLSearchParams({
             total_calories: totalCalories,
             max_plans: 3, 
-            calorie_tolerance_percent: 0.5 
+            calorie_tolerance_percent: 0.25
         });
 
         const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
