@@ -511,7 +511,6 @@ const generateMealPlan = async (request, h) => {
 
                 console.log('ML Response status:', response.status);
                 console.log('ML Response data type:', typeof response.data);
-                console.log('ML Response data:', JSON.stringify(response.data));
 
                 if (!response.data) {
                     console.log('No data in response');
@@ -563,48 +562,16 @@ const generateMealPlan = async (request, h) => {
                 return null;
             }
             
-            const cleanId = String(recipeId).replace(/\s+/g, '');
-            const numericId = parseInt(cleanId, 10);
-            
-            return isNaN(numericId) ? null : numericId;
-        };
-
-        const fixFirebaseRecipeIds = async () => {
-            console.log('Checking and fixing Firebase original_recipe_id format...');
-            
             try {
-                const foodItemsSnapshot = await db.collection('food_items').get();
-                const batch = db.batch();
-                let fixedCount = 0;
+                const cleanId = String(recipeId).replace(/\s+/g, '');
+                const numericId = parseInt(cleanId, 10);
                 
-                foodItemsSnapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const currentRecipeId = data.original_recipe_id;
-                    
-                    if (currentRecipeId !== null && currentRecipeId !== undefined) {
-                        const normalizedId = normalizeRecipeId(currentRecipeId);
-                        
-                        if (normalizedId !== null && normalizedId !== currentRecipeId) {
-                            console.log(`Fixing original_recipe_id: ${currentRecipeId} -> ${normalizedId} for food: ${data.name || data.food_name || 'Unknown'}`);
-                            batch.update(doc.ref, { original_recipe_id: normalizedId });
-                            fixedCount++;
-                        }
-                    }
-                });
-                
-                if (fixedCount > 0) {
-                    await batch.commit();
-                    console.log(`Fixed ${fixedCount} original_recipe_id values in Firebase`);
-                } else {
-                    console.log('No original_recipe_id values needed fixing');
-                }
-                
+                return isNaN(numericId) ? null : numericId;
             } catch (error) {
-                console.error('Error fixing Firebase recipe IDs:', error.message);
+                console.error('Error normalizing recipe ID:', recipeId, error.message);
+                return null;
             }
         };
-
-        await fixFirebaseRecipeIds();
 
         const mealPlans = await getMealPlanFromML();
 
@@ -635,69 +602,77 @@ const generateMealPlan = async (request, h) => {
                 
                 for (const recipeId of recipeIds) {
                     try {
-                        console.log(`Querying recipe ID: ${recipeId} (type: ${typeof recipeId})`);
+                        console.log(`Querying recipe ID: ${recipeId}`);
                         
-                        const foodQuery = await db.collection('food_items')
+                        let foodQuery = await db.collection('food_items')
                             .where('original_recipe_id', '==', recipeId)
                             .limit(1)
                             .get();
                         
                         if (!foodQuery.empty) {
                             const foodData = foodQuery.docs[0].data();
-                            console.log(`Found food: ${foodData.name || foodData.food_name || 'Unknown'} with original_recipe_id: ${foodData.original_recipe_id}`);
+                            console.log(`Found food: ${foodData.name || foodData.food_name || 'Unknown'}`);
                             foodDetailsMap.set(recipeId, foodData);
-                        } else {
-                            console.log(`No food item found for original_recipe_id: ${recipeId}`);
+                            continue;
+                        }
+
+                        foodQuery = await db.collection('food_items')
+                            .where('original_recipe_id', '==', recipeId.toString())
+                            .limit(1)
+                            .get();
+                        
+                        if (!foodQuery.empty) {
+                            const foodData = foodQuery.docs[0].data();
+                            console.log(`Found food with string ID, updating: ${foodData.name || foodData.food_name || 'Unknown'}`);
+                            foodDetailsMap.set(recipeId, foodData);
                             
-                            const stringQuery = await db.collection('food_items')
-                                .where('original_recipe_id', '==', recipeId.toString())
+                            foodQuery.docs[0].ref.update({ 
+                                original_recipe_id: recipeId 
+                            }).catch(err => {
+                                console.error('Error updating recipe ID:', err.message);
+                            });
+                            continue;
+                        }
+
+                        const spaceVariations = [
+                            ` ${recipeId}`,
+                            `${recipeId} `,
+                            ` ${recipeId} `
+                        ];
+
+                        let found = false;
+                        for (const variation of spaceVariations) {
+                            foodQuery = await db.collection('food_items')
+                                .where('original_recipe_id', '==', variation)
                                 .limit(1)
                                 .get();
                             
-                            if (!stringQuery.empty) {
-                                console.log(`Found food item with string original_recipe_id: ${recipeId}`);
-                                const foodData = stringQuery.docs[0].data();
+                            if (!foodQuery.empty) {
+                                const foodData = foodQuery.docs[0].data();
+                                console.log(`Found food with spaces, updating: ${foodData.name || foodData.food_name || 'Unknown'}`);
                                 foodDetailsMap.set(recipeId, foodData);
                                 
-                                try {
-                                    await stringQuery.docs[0].ref.update({ 
-                                        original_recipe_id: recipeId 
-                                    });
-                                    console.log(`Updated original_recipe_id from string to number for ${foodData.name || foodData.food_name}`);
-                                } catch (updateError) {
-                                    console.error('Error updating original_recipe_id:', updateError.message);
-                                }
-                            } else {
-                                console.log(`Searching for trimmed versions of recipe ID: ${recipeId}`);
-                                const allFoodItems = await db.collection('food_items').get();
+                                foodQuery.docs[0].ref.update({ 
+                                    original_recipe_id: recipeId 
+                                }).catch(err => {
+                                    console.error('Error updating spaced recipe ID:', err.message);
+                                });
                                 
-                                for (const doc of allFoodItems.docs) {
-                                    const data = doc.data();
-                                    const normalizedDbId = normalizeRecipeId(data.original_recipe_id);
-                                    
-                                    if (normalizedDbId === recipeId) {
-                                        console.log(`Found match through normalization: ${data.original_recipe_id} -> ${normalizedDbId}`);
-                                        foodDetailsMap.set(recipeId, data);
-                                        
-                                        try {
-                                            await doc.ref.update({ 
-                                                original_recipe_id: recipeId 
-                                            });
-                                            console.log(`Updated mismatched original_recipe_id for ${data.name || data.food_name}`);
-                                        } catch (updateError) {
-                                            console.error('Error updating mismatched original_recipe_id:', updateError.message);
-                                        }
-                                        break;
-                                    }
-                                }
+                                found = true;
+                                break;
                             }
                         }
+
+                        if (!found) {
+                            console.log(`No food item found for recipe ID: ${recipeId}`);
+                        }
+
                     } catch (queryError) {
                         console.error(`Error querying recipe ID ${recipeId}:`, queryError.message);
                     }
                 }
 
-                console.log(`Total food details found: ${foodDetailsMap.size}`);
+                console.log(`Total food details found: ${foodDetailsMap.size} out of ${recipeIds.length}`);
 
                 mealTypes.forEach(mealType => {
                     if (enhancedPlan[mealType] && enhancedPlan[mealType].RecipeId) {
@@ -721,7 +696,7 @@ const generateMealPlan = async (request, h) => {
                                 original_recipe_id: foodDetails.original_recipe_id
                             };
                         } else {
-                            console.log(`Food details not found for normalized RecipeId: ${recipeId}`);
+                            console.log(`Food details not found for RecipeId: ${recipeId}`);
                             enhancedPlan[mealType].food_details = null;
                         }
                     }
@@ -749,7 +724,6 @@ const generateMealPlan = async (request, h) => {
 
     } catch (error) {
         console.error('Generate meal plan error:', error);
-        console.error('Error stack:', error.stack);
 
         if (error.code === 'ECONNREFUSED') {
             return h.response({
