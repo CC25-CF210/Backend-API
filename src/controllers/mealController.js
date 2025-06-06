@@ -443,6 +443,7 @@ const deleteMealEntry = async (request, h) => {
 const generateMealPlan = async (request, h) => {
     try {
         const userId = request.user.uid;
+        console.log('Starting meal plan generation for user:', userId);
 
         const profileQuery = await db.collection('user_profiles')
             .where('user_id', '==', userId)
@@ -457,11 +458,12 @@ const generateMealPlan = async (request, h) => {
 
         const userProfile = profileQuery.docs[0].data();
         const totalCalories = userProfile.daily_calorie_target;
+        console.log('User daily calorie target:', totalCalories);
 
-        if (!totalCalories) {
+        if (!totalCalories || totalCalories <= 0) {
             return h.response({
                 status: 'fail',
-                message: 'Target kalori harian belum diset'
+                message: 'Target kalori harian belum diset atau tidak valid'
             }).code(400);
         }
 
@@ -480,48 +482,75 @@ const generateMealPlan = async (request, h) => {
             tolerancePercent = 0.5;
         }
 
+        console.log('Calculated tolerance percent:', tolerancePercent);
+
         const getMealPlanFromML = async (retryCount = 0) => {
-            const maxRetries = 5;
+            const maxRetries = 3;
             
             try {
+                console.log(`Attempt ${retryCount + 1} - Calling ML service...`);
+                
                 const mlParams = new URLSearchParams({
-                    total_calories: totalCalories,
-                    max_plans: 3, 
-                    calorie_tolerance_percent: tolerancePercent
+                    total_calories: totalCalories.toString(),
+                    max_plans: '3', 
+                    calorie_tolerance_percent: tolerancePercent.toString()
                 });
 
                 const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
+                console.log('ML Endpoint:', mlEndpoint);
                 
                 const response = await axios.get(mlEndpoint, {
-                    timeout: 30000 
+                    timeout: 15000, 
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
                 });
 
-                if (!response.data || 
-                    !Array.isArray(response.data) || 
-                    response.data.length === 0) {
-                    
+                console.log('ML Response status:', response.status);
+                console.log('ML Response data type:', typeof response.data);
+                console.log('ML Response data:', JSON.stringify(response.data));
+
+                if (!response.data) {
+                    console.log('No data in response');
+                    throw new Error('Empty response from ML service');
+                }
+
+                let mealPlansData = response.data;
+                if (response.data.meal_plans) {
+                    mealPlansData = response.data.meal_plans;
+                } else if (response.data.data) {
+                    mealPlansData = response.data.data;
+                }
+
+                if (!Array.isArray(mealPlansData) || mealPlansData.length === 0) {
                     console.log(`Attempt ${retryCount + 1}: No meal plans returned from ML`);
                     
                     if (retryCount < maxRetries) {
-                        await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
+                        console.log('Retrying...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                         return await getMealPlanFromML(retryCount + 1);
                     } else {
                         throw new Error('Maksimal retry tercapai, ML tidak menghasilkan meal plan');
                     }
                 }
 
-                console.log(`Success: Got ${response.data.length} meal plans from ML`);
-                return response.data;
+                console.log(`Success: Got ${mealPlansData.length} meal plans from ML`);
+                return mealPlansData;
 
             } catch (error) {
-                if (retryCount < maxRetries && 
-                    (error.code === 'ECONNREFUSED' || 
-                     error.code === 'ENOTFOUND' || 
-                     error.code === 'ECONNABORTED')) {
-                    
-                    console.log(`Attempt ${retryCount + 1}: Connection error, retrying...`);
-                    await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
-                    return await getMealPlanFromML(retryCount + 1);
+                console.error(`Attempt ${retryCount + 1} failed:`, error.message);
+                
+                if (retryCount < maxRetries) {
+                    if (error.code === 'ECONNREFUSED' || 
+                        error.code === 'ENOTFOUND' || 
+                        error.code === 'ECONNABORTED' ||
+                        error.message.includes('timeout')) {
+                        
+                        console.log(`Attempt ${retryCount + 1}: Connection/timeout error, retrying...`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        return await getMealPlanFromML(retryCount + 1);
+                    }
                 }
                 throw error;
             }
@@ -539,6 +568,7 @@ const generateMealPlan = async (request, h) => {
             generated_at: new Date().toISOString()
         };
 
+        console.log('Successfully generated meal plan');
         return h.response({
             status: 'success',
             message: 'Meal plan berhasil di-generate',
@@ -547,32 +577,47 @@ const generateMealPlan = async (request, h) => {
 
     } catch (error) {
         console.error('Generate meal plan error:', error);
+        console.error('Error stack:', error.stack);
 
-        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        if (error.code === 'ECONNREFUSED') {
             return h.response({
                 status: 'error',
-                message: 'Layanan ML tidak tersedia saat ini'
+                message: 'Layanan ML tidak dapat diakses (Connection refused)'
             }).code(503);
         }
 
-        if (error.code === 'ECONNABORTED') {
+        if (error.code === 'ENOTFOUND') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak ditemukan (Host not found)'
+            }).code(503);
+        }
+
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
             return h.response({
                 status: 'error',
                 message: 'Request timeout - layanan ML membutuhkan waktu terlalu lama'
             }).code(504);
         }
 
-        if (error.response) {
+        if (axios.isAxiosError(error) && error.response) {
             return h.response({
                 status: 'error',
                 message: 'Gagal generate meal plan dari layanan ML',
-                details: error.response.data
-            }).code(error.response.status || 500);
+                details: {
+                    status: error.response.status,
+                    data: error.response.data
+                }
+            }).code(error.response.status >= 400 && error.response.status < 500 ? 400 : 500);
         }
 
         return h.response({
             status: 'error',
-            message: 'Terjadi kesalahan saat generate meal plan'
+            message: 'Terjadi kesalahan saat generate meal plan',
+            error_details: {
+                message: error.message,
+                type: error.constructor.name
+            }
         }).code(500);
     }
 };
