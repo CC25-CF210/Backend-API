@@ -730,7 +730,6 @@ const getMealDetailsByRecipeId = async (request, h) => {
                 meal_type: "Main",
                 diet_type: [],
                 all_images: allImages,
-                formatted_images: formattedImages,
                 total_nutrition: {
                     calories: Math.round(meal.Calories || 0),
                     protein: Math.round(meal.ProteinContent || 0),
