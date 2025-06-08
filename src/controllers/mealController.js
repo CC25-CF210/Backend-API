@@ -626,6 +626,58 @@ const getMealDetailsByRecipeId = async (request, h) => {
             }).code(400);
         }
 
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            
+            const firstUrl = imageUrls[0];
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
+            
+            return null;
+        };
+
+        const getAllImageUrls = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return [];
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            
+            return imageUrls
+                .map(url => url.trim().replace(/^"|"$/g, ''))
+                .filter(url => url && url.startsWith('http'));
+        };
+
+        const formatImgUrls = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            
+            const formattedUrls = imageUrls.map(url => url.trim().replace(/^"|"$/g, ''));
+            
+            const result = [];
+            formattedUrls.forEach((url, index) => {
+                if (url && url.startsWith('http')) {
+                    result.push(`[Index ${index}] "${url}"`);
+                }
+            });
+            
+            return result.length > 0 ? result : null;
+        };
+
         const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${recipeId}`;
         
         const response = await axios.get(mlEndpoint, {
@@ -645,11 +697,9 @@ const getMealDetailsByRecipeId = async (request, h) => {
 
         const meal = response.data;
         
-        let imageUrl = null;
-        if (meal.Image) {
-            const images = meal.Image.split(',').map(img => img.trim());
-            imageUrl = images[0] || null;
-        }
+        const imageUrl = getFirstImageUrl(meal.Image);
+        const allImages = getAllImageUrls(meal.Image);
+        const formattedImages = formatImgUrls(meal.Image);
 
         let ingredients = [];
         if (meal.RecipeIngredientParts && Array.isArray(meal.RecipeIngredientParts)) {
@@ -679,7 +729,8 @@ const getMealDetailsByRecipeId = async (request, h) => {
                 cuisine: "Other",
                 meal_type: "Main",
                 diet_type: [],
-                all_images: meal.Image ? meal.Image.split(',').map(img => img.trim()) : [],
+                all_images: allImages,
+                formatted_images: formattedImages,
                 total_nutrition: {
                     calories: Math.round(meal.Calories || 0),
                     protein: Math.round(meal.ProteinContent || 0),
