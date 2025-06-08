@@ -483,6 +483,18 @@ const generateMealPlan = async (request, h) => {
             tolerancePercent = 0.5;
         }
 
+        const processImageUrl = (imageString) => {
+            if (!imageString) return null;
+            
+            const images = imageString.split(',').map(img => img.trim());
+            
+            const validImages = images.filter(img => img.length > 0);
+            
+            if (validImages.length === 0) return null;
+            
+            return validImages[0];
+        };
+
         const getMealPlanFromML = async (retryCount = 0) => {
             const maxRetries = 3;
             
@@ -551,7 +563,8 @@ const generateMealPlan = async (request, h) => {
                     simplifiedPlan[mealType] = {
                         RecipeId: meal.RecipeId,
                         Name: meal.Name,
-                        Calories: Math.round(meal.Calories || 0)
+                        Calories: Math.round(meal.Calories || 0),
+                        Image: processImageUrl(meal.Image)
                     };
                 });
             }
