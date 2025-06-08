@@ -70,6 +70,11 @@ const routes = [
     },
     {
         method: 'GET',
+        path: '/api/foods/search',
+        handler: foodController.searchFoods
+    },
+    {
+        method: 'GET',
         path: '/api/foods/{foodId}',
         handler: foodController.getFoodById
     },
@@ -194,6 +199,7 @@ const routes = [
                     },
                     foods: {
                         'GET /api/foods': 'Get all foods',
+                        'GET /api/foods/search': 'Search foods by name (prefix matching)',
                         'GET /api/foods/{id}': 'Get food by ID',
                         'POST /api/foods': 'Create food (requires auth)',
                         'PUT /api/foods/{id}': 'Update food (requires auth)',
