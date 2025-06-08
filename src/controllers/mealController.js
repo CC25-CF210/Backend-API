@@ -467,20 +467,10 @@ const generateMealPlan = async (request, h) => {
         }
 
         let tolerancePercent;
-        if (totalCalories <= 2000) {
+        if (totalCalories <= 3800) {
             tolerancePercent = 0.1;
-        } else if (totalCalories <= 2300) {
-            tolerancePercent = 0.15;
-        } else if (totalCalories <= 2500) {
-            tolerancePercent = 0.2;
-        } else if (totalCalories <= 2800) {
-            tolerancePercent = 0.25;
-        } else if (totalCalories <= 3000) {
-            tolerancePercent = 0.3;
-        } else if (totalCalories <= 3500) {
-            tolerancePercent = 0.35;
         } else {
-            tolerancePercent = 0.5;
+            tolerancePercent = 0.15;
         }
 
         const getFirstImageUrl = (inputString) => {
