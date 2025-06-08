@@ -460,7 +460,6 @@ const getUserCustomFoods = async (request, h) => {
 module.exports = {
     createFood,
     getAllFoods,
-    searchFoods,
     getFoodById,
     updateFood,
     deleteFood,
