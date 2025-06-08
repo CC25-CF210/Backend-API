@@ -498,11 +498,11 @@ const generateMealPlan = async (request, h) => {
                     calorie_tolerance_percent: tolerancePercent.toString()
                 });
 
-                const mlEndpoint = `http://13.220.198.84/generate-meal-plan/?${mlParams}`;
+                const mlEndpoint = `http://35.171.26.192/generate-meal-plan/?${mlParams}`;
                 console.log('ML Endpoint:', mlEndpoint);
                 
                 const response = await axios.get(mlEndpoint, {
-                    timeout: 15000, 
+                    timeout: 30000,
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
@@ -557,161 +557,108 @@ const generateMealPlan = async (request, h) => {
             }
         };
 
-        const normalizeRecipeId = (recipeId) => {
-            if (recipeId === null || recipeId === undefined) {
-                return null;
+        const processMealData = (meal) => {
+            let imageUrl = null;
+            if (meal.Image) {
+                const images = meal.Image.split(',').map(img => img.trim());
+                imageUrl = images[0] || null;
             }
-            
-            try {
-                const cleanId = String(recipeId).replace(/\s+/g, '');
-                const numericId = parseInt(cleanId, 10);
-                
-                return isNaN(numericId) ? null : numericId;
-            } catch (error) {
-                console.error('Error normalizing recipe ID:', recipeId, error.message);
-                return null;
+
+            let ingredients = [];
+            if (meal.RecipeIngredientParts && Array.isArray(meal.RecipeIngredientParts)) {
+                ingredients = meal.RecipeIngredientParts.flatMap(part => 
+                    part.split(',').map(ingredient => ingredient.trim())
+                );
             }
+
+            return {
+                id: meal.RecipeId?.toString() || null,
+                food_name: meal.Name || 'Unknown Recipe',
+                calories_per_serving: Math.round(meal.Calories || 0),
+                protein_per_serving: parseFloat((meal.ProteinContent || 0).toFixed(2)),
+                carbs_per_serving: parseFloat((meal.CarbohydrateContent || 0).toFixed(2)),
+                fat_per_serving: parseFloat((meal.FatContent || 0).toFixed(2)),
+                serving_size: 1,
+                serving_unit: "porsi",
+                image_url: imageUrl,
+                is_verified: true,
+                created_at: new Date().toISOString(),
+                recipe_metadata: {
+                    original_recipe_id: meal.RecipeId || null,
+                    cook_time: meal.CookTime || 0,
+                    prep_time: meal.PrepTime || 0,
+                    total_time: meal.TotalTime || 0,
+                    servings: 1, // Default to 1 serving
+                    keywords: meal.Keywords || [],
+                    ingredients: ingredients,
+                    cuisine: "Other",
+                    meal_type: meal.MealType || "Main",
+                    diet_type: [],
+                    all_images: meal.Image ? meal.Image.split(',').map(img => img.trim()) : [],
+                    total_nutrition: {
+                        calories: Math.round(meal.Calories || 0),
+                        protein: Math.round(meal.ProteinContent || 0),
+                        carbs: Math.round(meal.CarbohydrateContent || 0),
+                        fat: Math.round(meal.FatContent || 0),
+                        saturated_fat: Math.round(meal.SaturatedFatContent || 0),
+                        cholesterol: Math.round(meal.CholesterolContent || 0),
+                        sodium: Math.round(meal.SodiumContent || 0),
+                        fiber: Math.round(meal.FiberContent || 0),
+                        sugar: Math.round(meal.SugarContent || 0)
+                    }
+                }
+            };
         };
 
         const mealPlans = await getMealPlanFromML();
 
-        const enhancedMealPlans = await Promise.all(mealPlans.map(async (mealPlan) => {
-            const enhancedPlan = { ...mealPlan };
-            
-            const recipeIds = [];
-            const mealTypes = ['Breakfast', 'Lunch', 'Dinner'];
-            
-            mealTypes.forEach(mealType => {
-                if (mealPlan[mealType] && mealPlan[mealType].RecipeId) {
-                    const normalizedId = normalizeRecipeId(mealPlan[mealType].RecipeId);
+        const processedMealPlans = mealPlans.map(plan => {
+            const processedPlan = {
+                total_calories: plan.TotalCalories || 0,
+                meals: {}
+            };
+
+            if (plan.Meals && Array.isArray(plan.Meals)) {
+                plan.Meals.forEach(meal => {
+                    const mealType = meal.MealType?.toLowerCase() || 'unknown';
                     
-                    if (normalizedId !== null) {
-                        enhancedPlan[mealType].RecipeId = normalizedId;
-                        recipeIds.push(normalizedId);
-                        console.log(`Normalized ${mealType} RecipeId: ${mealPlan[mealType].RecipeId} -> ${normalizedId}`);
-                    } else {
-                        console.log(`Invalid RecipeId for ${mealType}: ${mealPlan[mealType].RecipeId}`);
+                    let standardMealType;
+                    switch (mealType) {
+                        case 'breakfast':
+                            standardMealType = 'breakfast';
+                            break;
+                        case 'lunch':
+                            standardMealType = 'lunch';
+                            break;
+                        case 'dinner':
+                            standardMealType = 'dinner';
+                            break;
+                        case 'additional meal 1':
+                        case 'additional meal 2':
+                        case 'snack':
+                            standardMealType = 'snack';
+                            break;
+                        default:
+                            standardMealType = 'snack';
                     }
-                }
-            });
 
-            if (recipeIds.length > 0) {
-                console.log('Fetching food details for normalized recipe IDs:', recipeIds);
-
-                const foodDetailsMap = new Map();
-                
-                for (const recipeId of recipeIds) {
-                    try {
-                        console.log(`Querying recipe ID: ${recipeId}`);
-                        
-                        let foodQuery = await db.collection('food_items')
-                            .where('original_recipe_id', '==', recipeId)
-                            .limit(1)
-                            .get();
-                        
-                        if (!foodQuery.empty) {
-                            const foodData = foodQuery.docs[0].data();
-                            console.log(`Found food: ${foodData.name || foodData.food_name || 'Unknown'}`);
-                            foodDetailsMap.set(recipeId, foodData);
-                            continue;
-                        }
-
-                        foodQuery = await db.collection('food_items')
-                            .where('original_recipe_id', '==', recipeId.toString())
-                            .limit(1)
-                            .get();
-                        
-                        if (!foodQuery.empty) {
-                            const foodData = foodQuery.docs[0].data();
-                            console.log(`Found food with string ID, updating: ${foodData.name || foodData.food_name || 'Unknown'}`);
-                            foodDetailsMap.set(recipeId, foodData);
-                            
-                            foodQuery.docs[0].ref.update({ 
-                                original_recipe_id: recipeId 
-                            }).catch(err => {
-                                console.error('Error updating recipe ID:', err.message);
-                            });
-                            continue;
-                        }
-
-                        const spaceVariations = [
-                            ` ${recipeId}`,
-                            `${recipeId} `,
-                            ` ${recipeId} `
-                        ];
-
-                        let found = false;
-                        for (const variation of spaceVariations) {
-                            foodQuery = await db.collection('food_items')
-                                .where('original_recipe_id', '==', variation)
-                                .limit(1)
-                                .get();
-                            
-                            if (!foodQuery.empty) {
-                                const foodData = foodQuery.docs[0].data();
-                                console.log(`Found food with spaces, updating: ${foodData.name || foodData.food_name || 'Unknown'}`);
-                                foodDetailsMap.set(recipeId, foodData);
-                                
-                                foodQuery.docs[0].ref.update({ 
-                                    original_recipe_id: recipeId 
-                                }).catch(err => {
-                                    console.error('Error updating spaced recipe ID:', err.message);
-                                });
-                                
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        if (!found) {
-                            console.log(`No food item found for recipe ID: ${recipeId}`);
-                        }
-
-                    } catch (queryError) {
-                        console.error(`Error querying recipe ID ${recipeId}:`, queryError.message);
+                    if (!processedPlan.meals[standardMealType]) {
+                        processedPlan.meals[standardMealType] = [];
                     }
-                }
 
-                console.log(`Total food details found: ${foodDetailsMap.size} out of ${recipeIds.length}`);
-
-                mealTypes.forEach(mealType => {
-                    if (enhancedPlan[mealType] && enhancedPlan[mealType].RecipeId) {
-                        const recipeId = enhancedPlan[mealType].RecipeId;
-                        const foodDetails = foodDetailsMap.get(recipeId);
-                        
-                        if (foodDetails) {
-                            console.log(`Assigning food details for ${mealType} - RecipeId: ${recipeId}`);
-                            enhancedPlan[mealType].food_details = {
-                                id: foodDetails.id,
-                                name: foodDetails.name || foodDetails.food_name,
-                                calories_per_serving: foodDetails.calories_per_serving,
-                                protein_per_serving: foodDetails.protein_per_serving,
-                                carbs_per_serving: foodDetails.carbs_per_serving,
-                                fat_per_serving: foodDetails.fat_per_serving,
-                                serving_size: foodDetails.serving_size,
-                                image_url: foodDetails.image_url,
-                                description: foodDetails.description,
-                                ingredients: foodDetails.ingredients,
-                                instructions: foodDetails.instructions,
-                                original_recipe_id: foodDetails.original_recipe_id
-                            };
-                        } else {
-                            console.log(`Food details not found for RecipeId: ${recipeId}`);
-                            enhancedPlan[mealType].food_details = null;
-                        }
-                    }
+                    processedPlan.meals[standardMealType].push(processMealData(meal));
                 });
             }
 
-            return enhancedPlan;
-        }));
+            return processedPlan;
+        });
 
         const responseData = {
             user_info: {
                 daily_calorie_target: totalCalories,
                 user_id: userId
             },
-            meal_plans: enhancedMealPlans,
+            meal_plans: processedMealPlans,
             generated_at: new Date().toISOString()
         };
 
