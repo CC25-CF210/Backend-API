@@ -799,6 +799,202 @@ const getMealDetailsByRecipeId = async (request, h) => {
     }
 };
 
+const getMealSuggestions = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { keywords, target_calories } = request.query;
+
+        if (!keywords || !target_calories) {
+            return h.response({
+                status: 'fail',
+                message: 'Keywords dan target_calories wajib diisi'
+            }).code(400);
+        }
+
+        let keywordList = [];
+        if (typeof keywords === 'string') {
+            keywordList = keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
+        } else if (Array.isArray(keywords)) {
+            keywordList = keywords.filter(k => typeof k === 'string' && k.trim().length > 0);
+        }
+
+        if (keywordList.length === 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Minimal 1 keyword harus diisi'
+            }).code(400);
+        }
+
+        if (keywordList.length > 6) {
+            return h.response({
+                status: 'fail',
+                message: 'Maksimal 6 keywords yang diizinkan'
+            }).code(400);
+        }
+
+        const targetCalories = parseInt(target_calories);
+        if (isNaN(targetCalories) || targetCalories <= 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Target calories harus berupa angka positif'
+            }).code(400);
+        }
+
+        const keywordsParam = keywordList.join(',');
+        const mlParams = new URLSearchParams({
+            keywords: keywordsParam,
+            target_calories: targetCalories.toString(),
+            top_n: '10'
+        });
+
+        const mlEndpoint = `http://3.24.217.142:8000/recommend_recipes?${mlParams}`;
+
+        const getMealSuggestionsFromML = async (retryCount = 0) => {
+            const maxRetries = 3;
+            
+            try {
+                console.log(`Calling ML API: ${mlEndpoint}`);
+                
+                const response = await axios.get(mlEndpoint, {
+                    timeout: 30000,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.data) {
+                    throw new Error('Empty response from ML service');
+                }
+
+                let recommendationsData = response.data.recommendations || [];
+                
+                if (!Array.isArray(recommendationsData) || recommendationsData.length === 0) {
+                    if (retryCount < maxRetries) {
+                        console.log(`Retry attempt ${retryCount + 1} for ML API call`);
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        return await getMealSuggestionsFromML(retryCount + 1);
+                    } else {
+                        return [];
+                    }
+                }
+
+                return recommendationsData;
+
+            } catch (error) {
+                console.error(`ML API error (attempt ${retryCount + 1}):`, error.message);
+                
+                if (retryCount < maxRetries) {
+                    if (error.code === 'ECONNREFUSED' || 
+                        error.code === 'ENOTFOUND' || 
+                        error.code === 'ECONNABORTED' ||
+                        error.message.includes('timeout')) {
+                        
+                        console.log(`Retrying ML API call in 3 seconds...`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        return await getMealSuggestionsFromML(retryCount + 1);
+                    }
+                }
+                throw error;
+            }
+        };
+
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            const firstUrl = imageUrls[0];
+            
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
+            
+            return null;
+        };
+
+        const recommendations = await getMealSuggestionsFromML();
+
+        const formattedSuggestions = recommendations.map(recipe => ({
+            recipe_id: recipe.RecipeId?.toString() || null,
+            name: recipe.Name || 'Unknown Recipe',
+            calories: Math.round(recipe.Calories || 0),
+            protein: parseFloat((recipe.ProteinContent || 0).toFixed(2)),
+            carbohydrate: parseFloat((recipe.CarbohydrateContent || 0).toFixed(2)),
+            fat: parseFloat((recipe.FatContent || 0).toFixed(2)),
+            serving_size: recipe.ServingSize || 1,
+            serving_unit: recipe.ServingUnit || 'Porsi',
+            image_url: getFirstImageUrl(recipe.Image),
+            calories_difference: Math.abs(targetCalories - (recipe.Calories || 0))
+        }));
+
+        formattedSuggestions.sort((a, b) => a.calories_difference - b.calories_difference);
+
+        const responseData = {
+            search_criteria: {
+                keywords: keywordList,
+                target_calories: targetCalories,
+                total_results: formattedSuggestions.length
+            },
+            suggestions: formattedSuggestions,
+            generated_at: new Date().toISOString()
+        };
+
+        return h.response({
+            status: 'success',
+            message: 'Meal suggestions berhasil ditemukan',
+            data: responseData
+        }).code(200);
+
+    } catch (error) {
+        console.error('Get meal suggestions error:', error);
+
+        if (error.response) {
+            if (error.response.status === 404) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Tidak ada rekomendasi meal yang ditemukan untuk kriteria tersebut'
+                }).code(404);
+            }
+            
+            if (error.response.status >= 500) {
+                return h.response({
+                    status: 'error',
+                    message: 'Layanan ML mengalami gangguan'
+                }).code(503);
+            }
+        }
+
+        if (error.code === 'ECONNREFUSED') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak dapat diakses (Connection refused)'
+            }).code(503);
+        }
+
+        if (error.code === 'ENOTFOUND') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak ditemukan (Host not found)'
+            }).code(503);
+        }
+
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            return h.response({
+                status: 'error',
+                message: 'Request timeout - layanan ML membutuhkan waktu terlalu lama'
+            }).code(504);
+        }
+
+        return h.response({
+            status: 'error',
+            message: 'Terjadi kesalahan saat mengambil meal suggestions'
+        }).code(500);
+    }
+};
+
 module.exports = {
     createMealEntry,
     getMealEntries,
@@ -806,5 +1002,6 @@ module.exports = {
     updateMealEntry,
     deleteMealEntry,
     generateMealPlan,
-    getMealDetailsByRecipeId
+    getMealDetailsByRecipeId,
+    getMealSuggestions
 };

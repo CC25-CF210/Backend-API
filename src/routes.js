@@ -126,6 +126,14 @@ const routes = [
         }
     },
     {
+        method: 'GET',
+        path: '/api/meals/suggestion',
+        handler: mealController.getMealSuggestions,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
         method: 'PUT',
         path: '/api/meals/{mealEntryId}',
         handler: mealController.updateMealEntry,
