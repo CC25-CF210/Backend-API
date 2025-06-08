@@ -149,6 +149,46 @@ const routes = [
             pre: [{ method: authMiddleware }]
         }
     },
+    {
+        method: 'POST',
+        path: '/api/meal-plans',
+        handler: mealController.saveMealPlan,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'GET',
+        path: '/api/meal-plans',
+        handler: mealController.getSavedMealPlans,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'GET',
+        path: '/api/meal-plans/{mealPlanId}',
+        handler: mealController.getMealPlanById,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'GET',
+        path: '/api/meal-plans/{mealPlanId}/meals/{mealType}/{mealIndex}',
+        handler: mealController.getMealFromPlanById,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'POST',
+        path: '/api/meal-plans/{mealPlanId}/meals/{mealType}/{mealIndex}/add-to-log',
+        handler: mealController.addMealFromPlanToLog,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
 
     // === DAILY LOG ROUTES ===
     {
