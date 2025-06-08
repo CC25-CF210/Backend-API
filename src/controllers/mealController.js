@@ -619,27 +619,14 @@ const getMealDetailsByRecipeId = async (request, h) => {
         const userId = request.user.uid;
         const { recipeId } = request.params;
 
-        const profileQuery = await db.collection('user_profiles')
-            .where('user_id', '==', userId)
-            .get();
-
-        if (profileQuery.empty) {
+        if (!recipeId) {
             return h.response({
                 status: 'fail',
-                message: 'Profil pengguna tidak ditemukan'
-            }).code(404);
+                message: 'Recipe ID wajib diisi'
+            }).code(400);
         }
 
-        const userProfile = profileQuery.docs[0].data();
-        const totalCalories = userProfile.daily_calorie_target;
-
-        const mlParams = new URLSearchParams({
-            total_calories: totalCalories.toString(),
-            max_plans: '1',
-            recipe_id: recipeId 
-        });
-
-        const mlEndpoint = `http://35.171.26.192/get-meal-details/?${mlParams}`;
+        const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${recipeId}`;
         
         const response = await axios.get(mlEndpoint, {
             timeout: 30000,
@@ -666,9 +653,7 @@ const getMealDetailsByRecipeId = async (request, h) => {
 
         let ingredients = [];
         if (meal.RecipeIngredientParts && Array.isArray(meal.RecipeIngredientParts)) {
-            ingredients = meal.RecipeIngredientParts.flatMap(part => 
-                part.split(',').map(ingredient => ingredient.trim())
-            );
+            ingredients = meal.RecipeIngredientParts;
         }
 
         const detailedMeal = {
@@ -678,8 +663,8 @@ const getMealDetailsByRecipeId = async (request, h) => {
             protein_per_serving: parseFloat((meal.ProteinContent || 0).toFixed(2)),
             carbs_per_serving: parseFloat((meal.CarbohydrateContent || 0).toFixed(2)),
             fat_per_serving: parseFloat((meal.FatContent || 0).toFixed(2)),
-            serving_size: 1,
-            serving_unit: "porsi",
+            serving_size: meal.ServingSize || 1,
+            serving_unit: meal.ServingUnit || "Porsi",
             image_url: imageUrl,
             is_verified: true,
             created_at: new Date().toISOString(),
@@ -688,11 +673,11 @@ const getMealDetailsByRecipeId = async (request, h) => {
                 cook_time: meal.CookTime || 0,
                 prep_time: meal.PrepTime || 0,
                 total_time: meal.TotalTime || 0,
-                servings: 1,
+                servings: meal.ServingSize || 1,
                 keywords: meal.Keywords || [],
                 ingredients: ingredients,
                 cuisine: "Other",
-                meal_type: meal.MealType || "Main",
+                meal_type: "Main",
                 diet_type: [],
                 all_images: meal.Image ? meal.Image.split(',').map(img => img.trim()) : [],
                 total_nutrition: {
@@ -720,6 +705,43 @@ const getMealDetailsByRecipeId = async (request, h) => {
     } catch (error) {
         console.error('Get meal details error:', error);
         
+        if (error.response) {
+            if (error.response.status === 404) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Recipe tidak ditemukan'
+                }).code(404);
+            }
+            
+            if (error.response.status >= 500) {
+                return h.response({
+                    status: 'error',
+                    message: 'Layanan ML mengalami gangguan'
+                }).code(503);
+            }
+        }
+        
+        if (error.code === 'ECONNREFUSED') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak dapat diakses'
+            }).code(503);
+        }
+
+        if (error.code === 'ENOTFOUND') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan ML tidak ditemukan'
+            }).code(503);
+        }
+
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            return h.response({
+                status: 'error',
+                message: 'Request timeout - layanan ML membutuhkan waktu terlalu lama'
+            }).code(504);
+        }
+
         return h.response({
             status: 'error',
             message: 'Terjadi kesalahan saat mengambil detail meal'
