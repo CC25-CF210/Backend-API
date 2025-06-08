@@ -715,11 +715,336 @@ const generateMealPlan = async (request, h) => {
     }
 };
 
+const saveMealPlan = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { meal_plan_data, plan_name } = request.payload;
+
+        if (!meal_plan_data) {
+            return h.response({
+                status: 'fail',
+                message: 'Data meal plan wajib diisi'
+            }).code(400);
+        }
+
+        const mealPlanId = nanoid(16);
+        const savedMealPlan = {
+            id: mealPlanId,
+            user_id: userId,
+            plan_name: plan_name || `Meal Plan ${new Date().toLocaleDateString()}`,
+            meal_plan_data,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        await db.collection('saved_meal_plans').doc(mealPlanId).set(savedMealPlan);
+
+        return h.response({
+            status: 'success',
+            message: 'Meal plan berhasil disimpan',
+            data: {
+                meal_plan_id: mealPlanId
+            }
+        }).code(201);
+
+    } catch (error) {
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const getSavedMealPlans = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+
+        const snapshot = await db.collection('saved_meal_plans')
+            .where('user_id', '==', userId)
+            .orderBy('created_at', 'desc')
+            .get();
+
+        const mealPlans = snapshot.docs.map(doc => doc.data());
+
+        return h.response({
+            status: 'success',
+            data: {
+                meal_plans: mealPlans
+            }
+        }).code(200);
+
+    } catch (error) {
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const getMealPlanById = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { mealPlanId } = request.params;
+
+        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
+
+        if (!mealPlanDoc.exists) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal plan tidak ditemukan'
+            }).code(404);
+        }
+
+        const mealPlanData = mealPlanDoc.data();
+
+        if (mealPlanData.user_id !== userId) {
+            return h.response({
+                status: 'fail',
+                message: 'Akses ditolak'
+            }).code(403);
+        }
+
+        return h.response({
+            status: 'success',
+            data: {
+                meal_plan: mealPlanData
+            }
+        }).code(200);
+
+    } catch (error) {
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const getMealFromPlanById = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { mealPlanId, mealType, mealIndex } = request.params;
+
+        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
+
+        if (!mealPlanDoc.exists) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal plan tidak ditemukan'
+            }).code(404);
+        }
+
+        const mealPlanData = mealPlanDoc.data();
+
+        if (mealPlanData.user_id !== userId) {
+            return h.response({
+                status: 'fail',
+                message: 'Akses ditolak'
+            }).code(403);
+        }
+
+        const mealPlans = mealPlanData.meal_plan_data.meal_plans;
+        if (!mealPlans || mealPlans.length === 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Tidak ada meal plan tersedia'
+            }).code(404);
+        }
+
+        const selectedPlan = mealPlans[0];
+        const mealsOfType = selectedPlan.meals[mealType];
+
+        if (!mealsOfType || !Array.isArray(mealsOfType)) {
+            return h.response({
+                status: 'fail',
+                message: `Meal type '${mealType}' tidak ditemukan`
+            }).code(404);
+        }
+
+        const mealIndex_int = parseInt(mealIndex);
+        if (mealIndex_int < 0 || mealIndex_int >= mealsOfType.length) {
+            return h.response({
+                status: 'fail',
+                message: 'Index meal tidak valid'
+            }).code(404);
+        }
+
+        const selectedMeal = mealsOfType[mealIndex_int];
+
+        return h.response({
+            status: 'success',
+            data: {
+                meal: selectedMeal,
+                meal_plan_info: {
+                    plan_id: mealPlanId,
+                    plan_name: mealPlanData.plan_name,
+                    meal_type: mealType,
+                    meal_index: mealIndex_int
+                }
+            }
+        }).code(200);
+
+    } catch (error) {
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const addMealFromPlanToLog = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { mealPlanId, mealType, mealIndex } = request.params;
+        const { log_date, servings = 1 } = request.payload;
+
+        if (!log_date) {
+            return h.response({
+                status: 'fail',
+                message: 'Log date wajib diisi'
+            }).code(400);
+        }
+
+        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
+
+        if (!mealPlanDoc.exists) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal plan tidak ditemukan'
+            }).code(404);
+        }
+
+        const mealPlanData = mealPlanDoc.data();
+
+        if (mealPlanData.user_id !== userId) {
+            return h.response({
+                status: 'fail',
+                message: 'Akses ditolak'
+            }).code(403);
+        }
+
+        const mealPlans = mealPlanData.meal_plan_data.meal_plans;
+        const selectedPlan = mealPlans[0];
+        const mealsOfType = selectedPlan.meals[mealType];
+        const selectedMeal = mealsOfType[parseInt(mealIndex)];
+
+        if (!selectedMeal) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal tidak ditemukan'
+            }).code(404);
+        }
+
+        const tempFoodId = `temp_${nanoid(16)}`;
+        const tempFood = {
+            id: tempFoodId,
+            food_name: selectedMeal.food_name,
+            calories_per_serving: selectedMeal.calories_per_serving,
+            protein_per_serving: selectedMeal.protein_per_serving,
+            carbs_per_serving: selectedMeal.carbs_per_serving,
+            fat_per_serving: selectedMeal.fat_per_serving,
+            serving_size: selectedMeal.serving_size,
+            serving_unit: selectedMeal.serving_unit,
+            image_url: selectedMeal.image_url,
+            is_verified: true,
+            created_at: new Date().toISOString(),
+            recipe_metadata: selectedMeal.recipe_metadata
+        };
+
+        await db.collection('temp_food_items').doc(tempFoodId).set(tempFood);
+
+        const servingAmount = parseFloat(servings);
+        const calories = Math.round(selectedMeal.calories_per_serving * servingAmount);
+        const protein = selectedMeal.protein_per_serving * servingAmount;
+        const carbs = selectedMeal.carbs_per_serving * servingAmount;
+        const fat = selectedMeal.fat_per_serving * servingAmount;
+
+        const logQuery = await db.collection('user_daily_logs')
+            .where('user_id', '==', userId)
+            .where('log_date', '==', log_date)
+            .get();
+
+        let dailyLogId;
+        let currentLog = null;
+
+        if (logQuery.empty) {
+            dailyLogId = nanoid(16);
+            const newLog = {
+                id: dailyLogId,
+                user_id: userId,
+                log_date,
+                total_calories_consumed: calories,
+                total_protein_consumed: protein,
+                total_carbs_consumed: carbs,
+                total_fat_consumed: fat,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).set(newLog);
+            currentLog = newLog;
+        } else {
+            const logDoc = logQuery.docs[0];
+            currentLog = logDoc.data();
+            dailyLogId = currentLog.id;
+
+            const updatedLog = {
+                total_calories_consumed: (currentLog.total_calories_consumed || 0) + calories,
+                total_protein_consumed: (currentLog.total_protein_consumed || 0) + protein,
+                total_carbs_consumed: (currentLog.total_carbs_consumed || 0) + carbs,
+                total_fat_consumed: (currentLog.total_fat_consumed || 0) + fat,
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).update(updatedLog);
+        }
+
+        const mealEntryId = nanoid(16);
+        const mealEntry = {
+            id: mealEntryId,
+            user_id: userId,
+            daily_log_id: dailyLogId,
+            food_item_id: tempFoodId,
+            meal_type: mealType,
+            servings: servingAmount,
+            calories,
+            protein,
+            carbs,
+            fat,
+            consumed_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            source_meal_plan_id: mealPlanId
+        };
+
+        await db.collection('meal_entries').doc(mealEntryId).set(mealEntry);
+
+        return h.response({
+            status: 'success',
+            message: 'Meal dari meal plan berhasil ditambahkan ke log',
+            data: {
+                mealEntryId,
+                dailyLogId
+            }
+        }).code(201);
+
+    } catch (error) {
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
 module.exports = {
     createMealEntry,
     getMealEntries,
     getDailyLog,
     updateMealEntry,
     deleteMealEntry,
-    generateMealPlan
-}
+    generateMealPlan,
+    saveMealPlan,
+    getSavedMealPlans,
+    getMealPlanById,
+    getMealFromPlanById,
+    addMealFromPlanToLog
+};
