@@ -458,7 +458,6 @@ const generateMealPlan = async (request, h) => {
 
         const userProfile = profileQuery.docs[0].data();
         const totalCalories = userProfile.daily_calorie_target;
-        console.log('User daily calorie target:', totalCalories);
 
         if (!totalCalories || totalCalories <= 0) {
             return h.response({
@@ -484,14 +483,10 @@ const generateMealPlan = async (request, h) => {
             tolerancePercent = 0.5;
         }
 
-        console.log('Calculated tolerance percent:', tolerancePercent);
-
         const getMealPlanFromML = async (retryCount = 0) => {
             const maxRetries = 3;
             
             try {
-                console.log(`Attempt ${retryCount + 1} - Calling ML service...`);
-                
                 const mlParams = new URLSearchParams({
                     total_calories: totalCalories.toString(),
                     max_plans: '3', 
@@ -499,7 +494,6 @@ const generateMealPlan = async (request, h) => {
                 });
 
                 const mlEndpoint = `http://35.171.26.192/generate-meal-plan/?${mlParams}`;
-                console.log('ML Endpoint:', mlEndpoint);
                 
                 const response = await axios.get(mlEndpoint, {
                     timeout: 30000,
@@ -509,11 +503,7 @@ const generateMealPlan = async (request, h) => {
                     }
                 });
 
-                console.log('ML Response status:', response.status);
-                console.log('ML Response data type:', typeof response.data);
-
                 if (!response.data) {
-                    console.log('No data in response');
                     throw new Error('Empty response from ML service');
                 }
 
@@ -525,10 +515,7 @@ const generateMealPlan = async (request, h) => {
                 }
 
                 if (!Array.isArray(mealPlansData) || mealPlansData.length === 0) {
-                    console.log(`Attempt ${retryCount + 1}: No meal plans returned from ML`);
-                    
                     if (retryCount < maxRetries) {
-                        console.log('Retrying...');
                         await new Promise(resolve => setTimeout(resolve, 2000));
                         return await getMealPlanFromML(retryCount + 1);
                     } else {
@@ -536,19 +523,15 @@ const generateMealPlan = async (request, h) => {
                     }
                 }
 
-                console.log(`Success: Got ${mealPlansData.length} meal plans from ML`);
                 return mealPlansData;
 
             } catch (error) {
-                console.error(`Attempt ${retryCount + 1} failed:`, error.message);
-                
                 if (retryCount < maxRetries) {
                     if (error.code === 'ECONNREFUSED' || 
                         error.code === 'ENOTFOUND' || 
                         error.code === 'ECONNABORTED' ||
                         error.message.includes('timeout')) {
                         
-                        console.log(`Attempt ${retryCount + 1}: Connection/timeout error, retrying...`);
                         await new Promise(resolve => setTimeout(resolve, 3000));
                         return await getMealPlanFromML(retryCount + 1);
                     }
@@ -557,100 +540,24 @@ const generateMealPlan = async (request, h) => {
             }
         };
 
-        const processMealData = (meal) => {
-            let imageUrl = null;
-            if (meal.Image) {
-                const images = meal.Image.split(',').map(img => img.trim());
-                imageUrl = images[0] || null;
-            }
-
-            let ingredients = [];
-            if (meal.RecipeIngredientParts && Array.isArray(meal.RecipeIngredientParts)) {
-                ingredients = meal.RecipeIngredientParts.flatMap(part => 
-                    part.split(',').map(ingredient => ingredient.trim())
-                );
-            }
-
-            return {
-                id: meal.RecipeId?.toString() || null,
-                food_name: meal.Name || 'Unknown Recipe',
-                calories_per_serving: Math.round(meal.Calories || 0),
-                protein_per_serving: parseFloat((meal.ProteinContent || 0).toFixed(2)),
-                carbs_per_serving: parseFloat((meal.CarbohydrateContent || 0).toFixed(2)),
-                fat_per_serving: parseFloat((meal.FatContent || 0).toFixed(2)),
-                serving_size: 1,
-                serving_unit: "porsi",
-                image_url: imageUrl,
-                is_verified: true,
-                created_at: new Date().toISOString(),
-                recipe_metadata: {
-                    original_recipe_id: meal.RecipeId || null,
-                    cook_time: meal.CookTime || 0,
-                    prep_time: meal.PrepTime || 0,
-                    total_time: meal.TotalTime || 0,
-                    servings: 1, // Default to 1 serving
-                    keywords: meal.Keywords || [],
-                    ingredients: ingredients,
-                    cuisine: "Other",
-                    meal_type: meal.MealType || "Main",
-                    diet_type: [],
-                    all_images: meal.Image ? meal.Image.split(',').map(img => img.trim()) : [],
-                    total_nutrition: {
-                        calories: Math.round(meal.Calories || 0),
-                        protein: Math.round(meal.ProteinContent || 0),
-                        carbs: Math.round(meal.CarbohydrateContent || 0),
-                        fat: Math.round(meal.FatContent || 0),
-                        saturated_fat: Math.round(meal.SaturatedFatContent || 0),
-                        cholesterol: Math.round(meal.CholesterolContent || 0),
-                        sodium: Math.round(meal.SodiumContent || 0),
-                        fiber: Math.round(meal.FiberContent || 0),
-                        sugar: Math.round(meal.SugarContent || 0)
-                    }
-                }
-            };
-        };
-
         const mealPlans = await getMealPlanFromML();
 
-        const processedMealPlans = mealPlans.map(plan => {
-            const processedPlan = {
-                total_calories: plan.TotalCalories || 0,
-                meals: {}
-            };
-
+        const simplifiedMealPlans = mealPlans.map(plan => {
+            const simplifiedPlan = {};
+            
             if (plan.Meals && Array.isArray(plan.Meals)) {
                 plan.Meals.forEach(meal => {
-                    const mealType = meal.MealType?.toLowerCase() || 'unknown';
-                    
-                    let standardMealType;
-                    switch (mealType) {
-                        case 'breakfast':
-                            standardMealType = 'breakfast';
-                            break;
-                        case 'lunch':
-                            standardMealType = 'lunch';
-                            break;
-                        case 'dinner':
-                            standardMealType = 'dinner';
-                            break;
-                        case 'additional meal 1':
-                        case 'additional meal 2':
-                        case 'snack':
-                            standardMealType = 'snack';
-                            break;
-                        default:
-                            standardMealType = 'snack';
-                    }
-
-                    if (!processedPlan.meals[standardMealType]) {
-                        processedPlan.meals[standardMealType] = [];
-                    }
-
-                    processedPlan.meals[standardMealType].push(processMealData(meal));
+                    const mealType = meal.MealType;
+                    simplifiedPlan[mealType] = {
+                        RecipeId: meal.RecipeId,
+                        Name: meal.Name,
+                        Calories: Math.round(meal.Calories || 0)
+                    };
                 });
             }
-
-            return processedPlan;
+            
+            simplifiedPlan.TotalCalories = plan.TotalCalories || 0;
+            return simplifiedPlan;
         });
 
         const responseData = {
@@ -658,11 +565,10 @@ const generateMealPlan = async (request, h) => {
                 daily_calorie_target: totalCalories,
                 user_id: userId
             },
-            meal_plans: processedMealPlans,
+            meal_plans: simplifiedMealPlans,
             generated_at: new Date().toISOString()
         };
 
-        console.log('Successfully generated meal plan');
         return h.response({
             status: 'success',
             message: 'Meal plan berhasil di-generate',
@@ -693,344 +599,122 @@ const generateMealPlan = async (request, h) => {
             }).code(504);
         }
 
-        if (axios.isAxiosError(error) && error.response) {
-            return h.response({
-                status: 'error',
-                message: 'Gagal generate meal plan dari layanan ML',
-                details: {
-                    status: error.response.status,
-                    data: error.response.data
-                }
-            }).code(error.response.status >= 400 && error.response.status < 500 ? 400 : 500);
-        }
-
         return h.response({
             status: 'error',
-            message: 'Terjadi kesalahan saat generate meal plan',
-            error_details: {
-                message: error.message,
-                type: error.constructor.name
-            }
+            message: 'Terjadi kesalahan saat generate meal plan'
         }).code(500);
     }
 };
 
-const saveMealPlan = async (request, h) => {
+const getMealDetailsByRecipeId = async (request, h) => {
     try {
         const userId = request.user.uid;
-        const { meal_plan_data, plan_name } = request.payload;
+        const { recipeId } = request.params;
 
-        if (!meal_plan_data) {
-            return h.response({
-                status: 'fail',
-                message: 'Data meal plan wajib diisi'
-            }).code(400);
-        }
-
-        const mealPlanId = nanoid(16);
-        const savedMealPlan = {
-            id: mealPlanId,
-            user_id: userId,
-            plan_name: plan_name || `Meal Plan ${new Date().toLocaleDateString()}`,
-            meal_plan_data,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        await db.collection('saved_meal_plans').doc(mealPlanId).set(savedMealPlan);
-
-        return h.response({
-            status: 'success',
-            message: 'Meal plan berhasil disimpan',
-            data: {
-                meal_plan_id: mealPlanId
-            }
-        }).code(201);
-
-    } catch (error) {
-        return h.response({
-            status: 'error',
-            message: error.message
-        }).code(500);
-    }
-};
-
-const getSavedMealPlans = async (request, h) => {
-    try {
-        const userId = request.user.uid;
-
-        const snapshot = await db.collection('saved_meal_plans')
+        const profileQuery = await db.collection('user_profiles')
             .where('user_id', '==', userId)
-            .orderBy('created_at', 'desc')
             .get();
 
-        const mealPlans = snapshot.docs.map(doc => doc.data());
+        if (profileQuery.empty) {
+            return h.response({
+                status: 'fail',
+                message: 'Profil pengguna tidak ditemukan'
+            }).code(404);
+        }
 
-        return h.response({
-            status: 'success',
-            data: {
-                meal_plans: mealPlans
+        const userProfile = profileQuery.docs[0].data();
+        const totalCalories = userProfile.daily_calorie_target;
+
+        const mlParams = new URLSearchParams({
+            total_calories: totalCalories.toString(),
+            max_plans: '1',
+            recipe_id: recipeId 
+        });
+
+        const mlEndpoint = `http://35.171.26.192/get-meal-details/?${mlParams}`;
+        
+        const response = await axios.get(mlEndpoint, {
+            timeout: 30000,
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
-        }).code(200);
+        });
 
-    } catch (error) {
-        return h.response({
-            status: 'error',
-            message: error.message
-        }).code(500);
-    }
-};
-
-const getMealPlanById = async (request, h) => {
-    try {
-        const userId = request.user.uid;
-        const { mealPlanId } = request.params;
-
-        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
-
-        if (!mealPlanDoc.exists) {
-            return h.response({
-                status: 'fail',
-                message: 'Meal plan tidak ditemukan'
-            }).code(404);
-        }
-
-        const mealPlanData = mealPlanDoc.data();
-
-        if (mealPlanData.user_id !== userId) {
-            return h.response({
-                status: 'fail',
-                message: 'Akses ditolak'
-            }).code(403);
-        }
-
-        return h.response({
-            status: 'success',
-            data: {
-                meal_plan: mealPlanData
-            }
-        }).code(200);
-
-    } catch (error) {
-        return h.response({
-            status: 'error',
-            message: error.message
-        }).code(500);
-    }
-};
-
-const getMealFromPlanById = async (request, h) => {
-    try {
-        const userId = request.user.uid;
-        const { mealPlanId, mealType, mealIndex } = request.params;
-
-        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
-
-        if (!mealPlanDoc.exists) {
-            return h.response({
-                status: 'fail',
-                message: 'Meal plan tidak ditemukan'
-            }).code(404);
-        }
-
-        const mealPlanData = mealPlanDoc.data();
-
-        if (mealPlanData.user_id !== userId) {
-            return h.response({
-                status: 'fail',
-                message: 'Akses ditolak'
-            }).code(403);
-        }
-
-        const mealPlans = mealPlanData.meal_plan_data.meal_plans;
-        if (!mealPlans || mealPlans.length === 0) {
-            return h.response({
-                status: 'fail',
-                message: 'Tidak ada meal plan tersedia'
-            }).code(404);
-        }
-
-        const selectedPlan = mealPlans[0];
-        const mealsOfType = selectedPlan.meals[mealType];
-
-        if (!mealsOfType || !Array.isArray(mealsOfType)) {
-            return h.response({
-                status: 'fail',
-                message: `Meal type '${mealType}' tidak ditemukan`
-            }).code(404);
-        }
-
-        const mealIndex_int = parseInt(mealIndex);
-        if (mealIndex_int < 0 || mealIndex_int >= mealsOfType.length) {
-            return h.response({
-                status: 'fail',
-                message: 'Index meal tidak valid'
-            }).code(404);
-        }
-
-        const selectedMeal = mealsOfType[mealIndex_int];
-
-        return h.response({
-            status: 'success',
-            data: {
-                meal: selectedMeal,
-                meal_plan_info: {
-                    plan_id: mealPlanId,
-                    plan_name: mealPlanData.plan_name,
-                    meal_type: mealType,
-                    meal_index: mealIndex_int
-                }
-            }
-        }).code(200);
-
-    } catch (error) {
-        return h.response({
-            status: 'error',
-            message: error.message
-        }).code(500);
-    }
-};
-
-const addMealFromPlanToLog = async (request, h) => {
-    try {
-        const userId = request.user.uid;
-        const { mealPlanId, mealType, mealIndex } = request.params;
-        const { log_date, servings = 1 } = request.payload;
-
-        if (!log_date) {
-            return h.response({
-                status: 'fail',
-                message: 'Log date wajib diisi'
-            }).code(400);
-        }
-
-        const mealPlanDoc = await db.collection('saved_meal_plans').doc(mealPlanId).get();
-
-        if (!mealPlanDoc.exists) {
-            return h.response({
-                status: 'fail',
-                message: 'Meal plan tidak ditemukan'
-            }).code(404);
-        }
-
-        const mealPlanData = mealPlanDoc.data();
-
-        if (mealPlanData.user_id !== userId) {
-            return h.response({
-                status: 'fail',
-                message: 'Akses ditolak'
-            }).code(403);
-        }
-
-        const mealPlans = mealPlanData.meal_plan_data.meal_plans;
-        const selectedPlan = mealPlans[0];
-        const mealsOfType = selectedPlan.meals[mealType];
-        const selectedMeal = mealsOfType[parseInt(mealIndex)];
-
-        if (!selectedMeal) {
+        if (!response.data) {
             return h.response({
                 status: 'fail',
                 message: 'Meal tidak ditemukan'
             }).code(404);
         }
 
-        const tempFoodId = `temp_${nanoid(16)}`;
-        const tempFood = {
-            id: tempFoodId,
-            food_name: selectedMeal.food_name,
-            calories_per_serving: selectedMeal.calories_per_serving,
-            protein_per_serving: selectedMeal.protein_per_serving,
-            carbs_per_serving: selectedMeal.carbs_per_serving,
-            fat_per_serving: selectedMeal.fat_per_serving,
-            serving_size: selectedMeal.serving_size,
-            serving_unit: selectedMeal.serving_unit,
-            image_url: selectedMeal.image_url,
-            is_verified: true,
-            created_at: new Date().toISOString(),
-            recipe_metadata: selectedMeal.recipe_metadata
-        };
-
-        await db.collection('temp_food_items').doc(tempFoodId).set(tempFood);
-
-        const servingAmount = parseFloat(servings);
-        const calories = Math.round(selectedMeal.calories_per_serving * servingAmount);
-        const protein = selectedMeal.protein_per_serving * servingAmount;
-        const carbs = selectedMeal.carbs_per_serving * servingAmount;
-        const fat = selectedMeal.fat_per_serving * servingAmount;
-
-        const logQuery = await db.collection('user_daily_logs')
-            .where('user_id', '==', userId)
-            .where('log_date', '==', log_date)
-            .get();
-
-        let dailyLogId;
-        let currentLog = null;
-
-        if (logQuery.empty) {
-            dailyLogId = nanoid(16);
-            const newLog = {
-                id: dailyLogId,
-                user_id: userId,
-                log_date,
-                total_calories_consumed: calories,
-                total_protein_consumed: protein,
-                total_carbs_consumed: carbs,
-                total_fat_consumed: fat,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            };
-
-            await db.collection('user_daily_logs').doc(dailyLogId).set(newLog);
-            currentLog = newLog;
-        } else {
-            const logDoc = logQuery.docs[0];
-            currentLog = logDoc.data();
-            dailyLogId = currentLog.id;
-
-            const updatedLog = {
-                total_calories_consumed: (currentLog.total_calories_consumed || 0) + calories,
-                total_protein_consumed: (currentLog.total_protein_consumed || 0) + protein,
-                total_carbs_consumed: (currentLog.total_carbs_consumed || 0) + carbs,
-                total_fat_consumed: (currentLog.total_fat_consumed || 0) + fat,
-                updated_at: new Date().toISOString()
-            };
-
-            await db.collection('user_daily_logs').doc(dailyLogId).update(updatedLog);
+        const meal = response.data;
+        
+        let imageUrl = null;
+        if (meal.Image) {
+            const images = meal.Image.split(',').map(img => img.trim());
+            imageUrl = images[0] || null;
         }
 
-        const mealEntryId = nanoid(16);
-        const mealEntry = {
-            id: mealEntryId,
-            user_id: userId,
-            daily_log_id: dailyLogId,
-            food_item_id: tempFoodId,
-            meal_type: mealType,
-            servings: servingAmount,
-            calories,
-            protein,
-            carbs,
-            fat,
-            consumed_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            source_meal_plan_id: mealPlanId
-        };
+        let ingredients = [];
+        if (meal.RecipeIngredientParts && Array.isArray(meal.RecipeIngredientParts)) {
+            ingredients = meal.RecipeIngredientParts.flatMap(part => 
+                part.split(',').map(ingredient => ingredient.trim())
+            );
+        }
 
-        await db.collection('meal_entries').doc(mealEntryId).set(mealEntry);
+        const detailedMeal = {
+            id: meal.RecipeId?.toString() || null,
+            food_name: meal.Name || 'Unknown Recipe',
+            calories_per_serving: Math.round(meal.Calories || 0),
+            protein_per_serving: parseFloat((meal.ProteinContent || 0).toFixed(2)),
+            carbs_per_serving: parseFloat((meal.CarbohydrateContent || 0).toFixed(2)),
+            fat_per_serving: parseFloat((meal.FatContent || 0).toFixed(2)),
+            serving_size: 1,
+            serving_unit: "porsi",
+            image_url: imageUrl,
+            is_verified: true,
+            created_at: new Date().toISOString(),
+            recipe_metadata: {
+                original_recipe_id: meal.RecipeId || null,
+                cook_time: meal.CookTime || 0,
+                prep_time: meal.PrepTime || 0,
+                total_time: meal.TotalTime || 0,
+                servings: 1,
+                keywords: meal.Keywords || [],
+                ingredients: ingredients,
+                cuisine: "Other",
+                meal_type: meal.MealType || "Main",
+                diet_type: [],
+                all_images: meal.Image ? meal.Image.split(',').map(img => img.trim()) : [],
+                total_nutrition: {
+                    calories: Math.round(meal.Calories || 0),
+                    protein: Math.round(meal.ProteinContent || 0),
+                    carbs: Math.round(meal.CarbohydrateContent || 0),
+                    fat: Math.round(meal.FatContent || 0),
+                    saturated_fat: Math.round(meal.SaturatedFatContent || 0),
+                    cholesterol: Math.round(meal.CholesterolContent || 0),
+                    sodium: Math.round(meal.SodiumContent || 0),
+                    fiber: Math.round(meal.FiberContent || 0),
+                    sugar: Math.round(meal.SugarContent || 0)
+                }
+            }
+        };
 
         return h.response({
             status: 'success',
-            message: 'Meal dari meal plan berhasil ditambahkan ke log',
+            message: 'Detail meal berhasil ditemukan',
             data: {
-                mealEntryId,
-                dailyLogId
+                meal: detailedMeal
             }
-        }).code(201);
+        }).code(200);
 
     } catch (error) {
+        console.error('Get meal details error:', error);
+        
         return h.response({
             status: 'error',
-            message: error.message
+            message: 'Terjadi kesalahan saat mengambil detail meal'
         }).code(500);
     }
 };
@@ -1042,9 +726,5 @@ module.exports = {
     updateMealEntry,
     deleteMealEntry,
     generateMealPlan,
-    saveMealPlan,
-    getSavedMealPlans,
-    getMealPlanById,
-    getMealFromPlanById,
-    addMealFromPlanToLog
+    getMealDetailsByRecipeId
 };

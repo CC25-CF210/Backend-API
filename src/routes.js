@@ -143,48 +143,16 @@ const routes = [
     },
     {
         method: 'GET',
-        path: '/api/meals/generate-plan',
+        path: '/api/meal-plans/generate',
         handler: mealController.generateMealPlan,
         options: {
             pre: [{ method: authMiddleware }]
         }
     },
     {
-        method: 'POST',
-        path: '/api/meal-plans',
-        handler: mealController.saveMealPlan,
-        options: {
-            pre: [{ method: authMiddleware }]
-        }
-    },
-    {
         method: 'GET',
-        path: '/api/meal-plans',
-        handler: mealController.getSavedMealPlans,
-        options: {
-            pre: [{ method: authMiddleware }]
-        }
-    },
-    {
-        method: 'GET',
-        path: '/api/meal-plans/{mealPlanId}',
-        handler: mealController.getMealPlanById,
-        options: {
-            pre: [{ method: authMiddleware }]
-        }
-    },
-    {
-        method: 'GET',
-        path: '/api/meal-plans/{mealPlanId}/meals/{mealType}/{mealIndex}',
-        handler: mealController.getMealFromPlanById,
-        options: {
-            pre: [{ method: authMiddleware }]
-        }
-    },
-    {
-        method: 'POST',
-        path: '/api/meal-plans/{mealPlanId}/meals/{mealType}/{mealIndex}/add-to-log',
-        handler: mealController.addMealFromPlanToLog,
+        path: '/api/meals/{recipeId}/details',
+        handler: mealController.getMealDetailsByRecipeId,
         options: {
             pre: [{ method: authMiddleware }]
         }
