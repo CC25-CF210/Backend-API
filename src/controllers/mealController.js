@@ -802,12 +802,12 @@ const getMealDetailsByRecipeId = async (request, h) => {
 const getMealSuggestions = async (request, h) => {
     try {
         const userId = request.user.uid;
-        const { keywords, target_calories } = request.query;
+        const { keywords } = request.query;
 
-        if (!keywords || !target_calories) {
+        if (!keywords) {
             return h.response({
                 status: 'fail',
-                message: 'Keywords dan target_calories wajib diisi'
+                message: 'Keywords wajib diisi'
             }).code(400);
         }
 
@@ -832,11 +832,24 @@ const getMealSuggestions = async (request, h) => {
             }).code(400);
         }
 
-        const targetCalories = parseInt(target_calories);
-        if (isNaN(targetCalories) || targetCalories <= 0) {
+        const profileQuery = await db.collection('user_profiles')
+            .where('user_id', '==', userId)
+            .get();
+
+        if (profileQuery.empty) {
             return h.response({
                 status: 'fail',
-                message: 'Target calories harus berupa angka positif'
+                message: 'Profil pengguna tidak ditemukan. Silakan lengkapi profil terlebih dahulu.'
+            }).code(404);
+        }
+
+        const userProfile = profileQuery.docs[0].data();
+        const targetCalories = userProfile.daily_calorie_target;
+
+        if (!targetCalories || targetCalories <= 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Target kalori harian belum diset dalam profil. Silakan set target kalori terlebih dahulu.'
             }).code(400);
         }
 
@@ -933,6 +946,10 @@ const getMealSuggestions = async (request, h) => {
         formattedSuggestions.sort((a, b) => a.calories_difference - b.calories_difference);
 
         const responseData = {
+            user_info: {
+                user_id: userId,
+                daily_calorie_target: targetCalories
+            },
             search_criteria: {
                 keywords: keywordList,
                 target_calories: targetCalories,
