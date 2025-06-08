@@ -74,6 +74,11 @@ const routes = [
         handler: foodController.getFoodById
     },
     {
+        method: 'GET',
+        path: '/api/search',
+        handler: foodController.searchFoods
+    },
+    {
         method: 'PUT',
         path: '/api/foods/{foodId}',
         handler: foodController.updateFood,

@@ -1,5 +1,6 @@
 const { db } = require('../config/firebase');
 const { nanoid } = require('nanoid');
+const axios = require('axios');
 
 const createFood = async (request, h) => {
     try {
@@ -457,6 +458,157 @@ const getUserCustomFoods = async (request, h) => {
     }
 };
 
+const searchFoods = async (request, h) => {
+    try {
+        const { name } = request.query;
+
+        if (!name || name.trim() === '') {
+            return h.response({
+                status: 'fail',
+                message: 'Parameter name wajib diisi'
+            }).code(400);
+        }
+
+        const searchTerm = name.trim();
+        
+        const getSearchFromML = async (retryCount = 0) => {
+            const maxRetries = 3;
+            
+            try {
+                const mlParams = new URLSearchParams({
+                    name: searchTerm,
+                    top_n: '12'
+                });
+
+                const mlEndpoint = `http://34.238.249.136/search?${mlParams}`;
+                
+                console.log('Calling ML search endpoint:', mlEndpoint);
+                
+                const response = await axios.get(mlEndpoint, {
+                    timeout: 15000,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.data) {
+                    throw new Error('Empty response from ML search service');
+                }
+
+                let searchResults = response.data;
+                if (response.data.recommendations) {
+                    searchResults = response.data.recommendations;
+                } else if (response.data.data) {
+                    searchResults = response.data.data;
+                }
+
+                if (!Array.isArray(searchResults)) {
+                    if (retryCount < maxRetries) {
+                        console.log(`Invalid search results format, retrying... (${retryCount + 1}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        return await getSearchFromML(retryCount + 1);
+                    } else {
+                        throw new Error('Format hasil search tidak valid dari ML service');
+                    }
+                }
+
+                return searchResults;
+
+            } catch (error) {
+                console.error(`ML search error (attempt ${retryCount + 1}):`, error.message);
+                
+                if (retryCount < maxRetries) {
+                    if (error.code === 'ECONNREFUSED' || 
+                        error.code === 'ENOTFOUND' || 
+                        error.code === 'ECONNABORTED' ||
+                        error.message.includes('timeout')) {
+                        
+                        console.log(`Retrying ML search... (${retryCount + 1}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        return await getSearchFromML(retryCount + 1);
+                    }
+                }
+                throw error;
+            }
+        };
+
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            
+            const firstUrl = imageUrls[0];
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
+            
+            return null;
+        };
+
+        const mlSearchResults = await getSearchFromML();
+
+        const transformedResults = mlSearchResults.map(item => ({
+            id: item.RecipeId?.toString() || null,
+            recipe_id: item.RecipeId || null,
+            food_name: item.Name || '',
+            calories_per_serving: Math.round(item.Calories) || 0,
+            protein_per_serving: parseFloat(item.ProteinContent) || 0,
+            carbs_per_serving: parseFloat(item.CarbohydrateContent) || 0,
+            fat_per_serving: parseFloat(item.FatContent) || 0,
+            serving_size: item.ServingSize || 1,
+            serving_unit: item.ServingUnit || 'Porsi',
+            image_url: getFirstImageUrl(item.Image),
+        }));
+
+        const responseData = {
+            search_query: searchTerm,
+            total_results: transformedResults.length,
+            foods: transformedResults,
+            searched_at: new Date().toISOString()
+        };
+
+        return h.response({
+            status: 'success',
+            message: `Ditemukan ${transformedResults.length} hasil untuk "${searchTerm}"`,
+            data: responseData
+        }).code(200);
+
+    } catch (error) {
+        console.error('Search foods error:', error);
+
+        if (error.code === 'ECONNREFUSED') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan pencarian ML tidak dapat diakses'
+            }).code(503);
+        }
+
+        if (error.code === 'ENOTFOUND') {
+            return h.response({
+                status: 'error',
+                message: 'Layanan pencarian ML tidak ditemukan'
+            }).code(503);
+        }
+
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            return h.response({
+                status: 'error',
+                message: 'Request timeout - layanan pencarian membutuhkan waktu terlalu lama'
+            }).code(504);
+        }
+
+        return h.response({
+            status: 'error',
+            message: 'Terjadi kesalahan saat mencari makanan'
+        }).code(500);
+    }
+};
+
 module.exports = {
     createFood,
     getAllFoods,
@@ -464,5 +616,6 @@ module.exports = {
     updateFood,
     deleteFood,
     createUserCustomFood,
-    getUserCustomFoods
+    getUserCustomFoods,
+    searchFoods
 };
