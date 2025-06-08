@@ -483,16 +483,21 @@ const generateMealPlan = async (request, h) => {
             tolerancePercent = 0.5;
         }
 
-        const processImageUrl = (imageString) => {
-            if (!imageString) return null;
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
             
-            const images = imageString.split(',').map(img => img.trim());
+            const cleanInput = inputString.replace(/\\\//g, '/');
             
-            const validImages = images.filter(img => img.length > 0);
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
             
-            if (validImages.length === 0) return null;
+            const firstUrl = imageUrls[0];
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
             
-            return validImages[0];
+            return null;
         };
 
         const getMealPlanFromML = async (retryCount = 0) => {
@@ -564,7 +569,7 @@ const generateMealPlan = async (request, h) => {
                         RecipeId: meal.RecipeId,
                         Name: meal.Name,
                         Calories: Math.round(meal.Calories || 0),
-                        Image: processImageUrl(meal.Image)
+                        Image: getFirstImageUrl(meal.Image)
                     };
                 });
             }
