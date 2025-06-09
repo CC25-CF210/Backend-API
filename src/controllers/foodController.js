@@ -609,6 +609,185 @@ const searchFoods = async (request, h) => {
     }
 };
 
+const addFoodFromSearch = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { 
+            recipe_id,
+            food_name,
+            calories_per_serving,
+            protein_per_serving,
+            carbs_per_serving,
+            fat_per_serving,
+            serving_size,
+            serving_unit,
+            meal_type,
+            servings = 1,
+            log_date,
+            image_url
+        } = request.payload;
+
+        if (!recipe_id || !food_name || !meal_type || !log_date) {
+            return h.response({
+                status: 'fail',
+                message: 'Recipe ID, nama makanan, meal type, dan log date wajib diisi'
+            }).code(400);
+        }
+
+        if (!['breakfast', 'lunch', 'dinner', 'snack'].includes(meal_type)) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal type harus salah satu dari: breakfast, lunch, dinner, snack'
+            }).code(400);
+        }
+
+        const servingAmount = parseFloat(servings);
+        if (servingAmount <= 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Jumlah porsi harus lebih dari 0'
+            }).code(400);
+        }
+
+        let dailyLogQuery = await db.collection('user_daily_logs')
+            .where('user_id', '==', userId)
+            .where('log_date', '==', log_date)
+            .get();
+
+        let dailyLogId;
+        let currentTotalCalories = 0;
+        let currentTotalProtein = 0;
+        let currentTotalCarbs = 0;
+        let currentTotalFat = 0;
+
+        if (dailyLogQuery.empty) {
+            dailyLogId = nanoid(16);
+            const timestamp = new Date().toISOString();
+
+            const dailyLogData = {
+                id: dailyLogId,
+                user_id: userId,
+                log_date,
+                total_calories_consumed: 0,
+                total_protein_consumed: 0,
+                total_carbs_consumed: 0,
+                total_fat_consumed: 0,
+                created_at: timestamp,
+                updated_at: timestamp
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).set(dailyLogData);
+        } else {
+            const dailyLogDoc = dailyLogQuery.docs[0];
+            dailyLogId = dailyLogDoc.data().id;
+            const dailyLogData = dailyLogDoc.data();
+            
+            currentTotalCalories = dailyLogData.total_calories_consumed || 0;
+            currentTotalProtein = dailyLogData.total_protein_consumed || 0;
+            currentTotalCarbs = dailyLogData.total_carbs_consumed || 0;
+            currentTotalFat = dailyLogData.total_fat_consumed || 0;
+        }
+
+        const tempFoodId = `search_${recipe_id}`;
+        const tempFoodData = {
+            id: tempFoodId,
+            recipe_id: parseInt(recipe_id),
+            food_name,
+            calories_per_serving: parseInt(calories_per_serving) || 0,
+            protein_per_serving: parseFloat(protein_per_serving) || 0,
+            carbs_per_serving: parseFloat(carbs_per_serving) || 0,
+            fat_per_serving: parseFloat(fat_per_serving) || 0,
+            serving_size: parseFloat(serving_size) || 1,
+            serving_unit: serving_unit || 'Porsi',
+            image_url: image_url || null,
+            is_from_search: true,
+            created_at: new Date().toISOString()
+        };
+
+        await db.collection('temp_foods').doc(tempFoodId).set(tempFoodData);
+
+        const totalCalories = Math.round((tempFoodData.calories_per_serving * servingAmount));
+        const totalProtein = parseFloat((tempFoodData.protein_per_serving * servingAmount).toFixed(2));
+        const totalCarbs = parseFloat((tempFoodData.carbs_per_serving * servingAmount).toFixed(2));
+        const totalFat = parseFloat((tempFoodData.fat_per_serving * servingAmount).toFixed(2));
+
+        const mealEntryId = nanoid(16);
+        const timestamp = new Date().toISOString();
+
+        const mealEntryData = {
+            id: mealEntryId,
+            daily_log_id: dailyLogId,
+            food_item_id: tempFoodId,
+            food_name: tempFoodData.food_name,
+            meal_type,
+            servings: servingAmount,
+            calories_consumed: totalCalories,
+            protein_consumed: totalProtein,
+            carbs_consumed: totalCarbs,
+            fat_consumed: totalFat,
+            consumed_at: timestamp,
+            is_from_search: true,
+            recipe_id: parseInt(recipe_id)
+        };
+
+        await db.collection('meal_entries').doc(mealEntryId).set(mealEntryData);
+
+        const newTotalCalories = currentTotalCalories + totalCalories;
+        const newTotalProtein = currentTotalProtein + totalProtein;
+        const newTotalCarbs = currentTotalCarbs + totalCarbs;
+        const newTotalFat = currentTotalFat + totalFat;
+
+        await db.collection('user_daily_logs').doc(dailyLogId).update({
+            total_calories_consumed: newTotalCalories,
+            total_protein_consumed: parseFloat(newTotalProtein.toFixed(2)),
+            total_carbs_consumed: parseFloat(newTotalCarbs.toFixed(2)),
+            total_fat_consumed: parseFloat(newTotalFat.toFixed(2)),
+            updated_at: timestamp
+        });
+
+        const profileQuery = await db.collection('user_profiles')
+            .where('user_id', '==', userId)
+            .get();
+
+        let remaining_calories = null;
+        if (!profileQuery.empty) {
+            const profile = profileQuery.docs[0].data();
+            remaining_calories = profile.daily_calorie_target - newTotalCalories;
+        }
+
+        return h.response({
+            status: 'success',
+            message: `${tempFoodData.food_name} berhasil ditambahkan ke log ${meal_type}`,
+            data: {
+                meal_entry_id: mealEntryId,
+                daily_log_id: dailyLogId,
+                food_added: {
+                    food_name: tempFoodData.food_name,
+                    servings: servingAmount,
+                    calories_added: totalCalories,
+                    protein_added: totalProtein,
+                    carbs_added: totalCarbs,
+                    fat_added: totalFat
+                },
+                updated_totals: {
+                    total_calories: newTotalCalories,
+                    total_protein: parseFloat(newTotalProtein.toFixed(2)),
+                    total_carbs: parseFloat(newTotalCarbs.toFixed(2)),
+                    total_fat: parseFloat(newTotalFat.toFixed(2)),
+                    remaining_calories
+                }
+            }
+        }).code(201);
+
+    } catch (error) {
+        console.error('Add food from search to log error:', error);
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
 module.exports = {
     createFood,
     getAllFoods,
@@ -617,5 +796,6 @@ module.exports = {
     deleteFood,
     createUserCustomFood,
     getUserCustomFoods,
-    searchFoods
+    searchFoods,
+    addFoodFromSearch
 };

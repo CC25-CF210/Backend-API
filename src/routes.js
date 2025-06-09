@@ -79,6 +79,14 @@ const routes = [
         handler: foodController.searchFoods
     },
     {
+        method: 'POST',
+        path: '/api/search/add',
+        handler: foodController.addFoodFromSearch,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
         method: 'PUT',
         path: '/api/foods/{foodId}',
         handler: foodController.updateFood,
