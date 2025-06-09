@@ -171,6 +171,42 @@ const routes = [
         }
     },
 
+    // === NEW MEAL PLAN ROUTES ===
+    {
+        method: 'POST',
+        path: '/api/meal-plans/add-meal',
+        handler: mealController.addMealFromPlan,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'POST',
+        path: '/api/meal-plans/add-full-plan',
+        handler: mealController.addFullMealPlan,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+    {
+        method: 'POST',
+        path: '/api/meals/suggestion/add',
+        handler: mealController.addMealFromSuggestion,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+
+    // === UPDATED MEAL ENTRIES ROUTE ===
+    {
+        method: 'GET',
+        path: '/api/meals/updated',
+        handler: mealController.getMealEntriesUpdated,
+        options: {
+            pre: [{ method: authMiddleware }]
+        }
+    },
+
     // === DAILY LOG ROUTES ===
     {
         method: 'GET',

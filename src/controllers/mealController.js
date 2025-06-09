@@ -1012,6 +1012,568 @@ const getMealSuggestions = async (request, h) => {
     }
 };
 
+const addMealFromPlan = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { 
+            recipe_id,
+            meal_type, 
+            servings = 1,
+            log_date 
+        } = request.payload;
+
+        if (!recipe_id || !meal_type || !log_date) {
+            return h.response({
+                status: 'fail',
+                message: 'Recipe ID, meal type, dan log date wajib diisi'
+            }).code(400);
+        }
+
+        if (!['breakfast', 'lunch', 'dinner', 'snack'].includes(meal_type)) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal type harus salah satu dari: breakfast, lunch, dinner, snack'
+            }).code(400);
+        }
+
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            const firstUrl = imageUrls[0];
+            
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
+            
+            return null;
+        };
+
+        const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${recipe_id}`;
+        
+        let mealData;
+        try {
+            const response = await axios.get(mlEndpoint, {
+                timeout: 30000,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.data) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Recipe tidak ditemukan'
+                }).code(404);
+            }
+
+            mealData = response.data;
+        } catch (error) {
+            console.error('Error fetching recipe details:', error);
+            return h.response({
+                status: 'error',
+                message: 'Gagal mengambil detail recipe dari layanan ML'
+            }).code(503);
+        }
+
+        const virtualFoodItem = {
+            id: `recipe_${recipe_id}`,
+            food_name: mealData.Name || 'Unknown Recipe',
+            calories_per_serving: Math.round(mealData.Calories || 0),
+            protein_per_serving: parseFloat((mealData.ProteinContent || 0).toFixed(2)),
+            carbs_per_serving: parseFloat((mealData.CarbohydrateContent || 0).toFixed(2)),
+            fat_per_serving: parseFloat((mealData.FatContent || 0).toFixed(2)),
+            serving_size: mealData.ServingSize || 1,
+            serving_unit: mealData.ServingUnit || "Porsi",
+            image_url: getFirstImageUrl(mealData.Image),
+            is_recipe: true,
+            recipe_id: recipe_id,
+            created_at: new Date().toISOString()
+        };
+
+        const servingAmount = parseFloat(servings);
+        const calories = Math.round(virtualFoodItem.calories_per_serving * servingAmount);
+        const protein = virtualFoodItem.protein_per_serving * servingAmount;
+        const carbs = virtualFoodItem.carbs_per_serving * servingAmount;
+        const fat = virtualFoodItem.fat_per_serving * servingAmount;
+
+        const logQuery = await db.collection('user_daily_logs')
+            .where('user_id', '==', userId)
+            .where('log_date', '==', log_date)
+            .get();
+
+        let dailyLogId;
+        let currentLog = null;
+
+        if (logQuery.empty) {
+            dailyLogId = nanoid(16);
+            const newLog = {
+                id: dailyLogId,
+                user_id: userId,
+                log_date,
+                total_calories_consumed: calories,
+                total_protein_consumed: protein,
+                total_carbs_consumed: carbs,
+                total_fat_consumed: fat,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).set(newLog);
+            currentLog = newLog;
+        } else {
+            const logDoc = logQuery.docs[0];
+            currentLog = logDoc.data();
+            dailyLogId = currentLog.id;
+
+            const updatedLog = {
+                total_calories_consumed: (currentLog.total_calories_consumed || 0) + calories,
+                total_protein_consumed: (currentLog.total_protein_consumed || 0) + protein,
+                total_carbs_consumed: (currentLog.total_carbs_consumed || 0) + carbs,
+                total_fat_consumed: (currentLog.total_fat_consumed || 0) + fat,
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).update(updatedLog);
+        }
+
+        const mealEntryId = nanoid(16);
+        const mealEntry = {
+            id: mealEntryId,
+            user_id: userId,
+            daily_log_id: dailyLogId,
+            food_item_id: virtualFoodItem.id,
+            meal_type,
+            servings: servingAmount,
+            calories,
+            protein,
+            carbs,
+            fat,
+            is_from_recipe: true,
+            recipe_id: recipe_id,
+            consumed_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        await db.collection('meal_entries').doc(mealEntryId).set(mealEntry);
+
+        return h.response({
+            status: 'success',
+            message: 'Meal dari meal plan berhasil ditambahkan',
+            data: {
+                mealEntryId,
+                dailyLogId,
+                food_details: virtualFoodItem
+            }
+        }).code(201);
+
+    } catch (error) {
+        console.error('Add meal from plan error:', error);
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const addFullMealPlan = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { 
+            meal_plan,
+            log_date 
+        } = request.payload;
+
+        if (!meal_plan || !log_date) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal plan dan log date wajib diisi'
+            }).code(400);
+        }
+
+        const mealTypes = ['breakfast', 'lunch', 'dinner'];
+        const missingMeals = mealTypes.filter(type => !meal_plan[type]);
+        
+        if (missingMeals.length > 0) {
+            return h.response({
+                status: 'fail',
+                message: `Meal plan tidak lengkap. Missing: ${missingMeals.join(', ')}`
+            }).code(400);
+        }
+
+        const results = [];
+        let totalPlanCalories = 0;
+        let totalPlanProtein = 0;
+        let totalPlanCarbs = 0;
+        let totalPlanFat = 0;
+
+        const getFirstImageUrl = (inputString) => {
+            if (!inputString || typeof inputString !== 'string') {
+                return null;
+            }
+            
+            const cleanInput = inputString.replace(/\\\//g, '/');
+            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+            const firstUrl = imageUrls[0];
+            
+            if (firstUrl && firstUrl.trim()) {
+                return firstUrl.trim().replace(/^"|"$/g, '');
+            }
+            
+            return null;
+        };
+
+        for (const mealType of mealTypes) {
+            const meal = meal_plan[mealType];
+            
+            try {
+                const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${meal.RecipeId}`;
+                const response = await axios.get(mlEndpoint, {
+                    timeout: 30000,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.data) {
+                    results.push({
+                        meal_type: mealType,
+                        status: 'failed',
+                        message: 'Recipe tidak ditemukan'
+                    });
+                    continue;
+                }
+
+                const mealData = response.data;
+
+                const virtualFoodItem = {
+                    id: `recipe_${meal.RecipeId}`,
+                    food_name: mealData.Name || meal.Name || 'Unknown Recipe',
+                    calories_per_serving: Math.round(mealData.Calories || meal.Calories || 0),
+                    protein_per_serving: parseFloat((mealData.ProteinContent || 0).toFixed(2)),
+                    carbs_per_serving: parseFloat((mealData.CarbohydrateContent || 0).toFixed(2)),
+                    fat_per_serving: parseFloat((mealData.FatContent || 0).toFixed(2)),
+                    serving_size: mealData.ServingSize || 1,
+                    serving_unit: mealData.ServingUnit || "Porsi",
+                    image_url: getFirstImageUrl(mealData.Image) || meal.Image,
+                    is_recipe: true,
+                    recipe_id: meal.RecipeId,
+                    created_at: new Date().toISOString()
+                };
+
+                const servings = 1;
+                const calories = virtualFoodItem.calories_per_serving * servings;
+                const protein = virtualFoodItem.protein_per_serving * servings;
+                const carbs = virtualFoodItem.carbs_per_serving * servings;
+                const fat = virtualFoodItem.fat_per_serving * servings;
+
+                totalPlanCalories += calories;
+                totalPlanProtein += protein;
+                totalPlanCarbs += carbs;
+                totalPlanFat += fat;
+
+                results.push({
+                    meal_type: mealType,
+                    status: 'success',
+                    recipe_id: meal.RecipeId,
+                    food_details: virtualFoodItem,
+                    nutrition: { calories, protein, carbs, fat }
+                });
+
+            } catch (error) {
+                console.error(`Error processing ${mealType}:`, error);
+                results.push({
+                    meal_type: mealType,
+                    status: 'failed',
+                    message: 'Gagal mengambil detail recipe'
+                });
+            }
+        }
+
+        const successfulMeals = results.filter(r => r.status === 'success');
+        if (successfulMeals.length === 0) {
+            return h.response({
+                status: 'fail',
+                message: 'Tidak ada meal yang berhasil diproses'
+            }).code(400);
+        }
+
+        const logQuery = await db.collection('user_daily_logs')
+            .where('user_id', '==', userId)
+            .where('log_date', '==', log_date)
+            .get();
+
+        let dailyLogId;
+
+        if (logQuery.empty) {
+            dailyLogId = nanoid(16);
+            const newLog = {
+                id: dailyLogId,
+                user_id: userId,
+                log_date,
+                total_calories_consumed: totalPlanCalories,
+                total_protein_consumed: totalPlanProtein,
+                total_carbs_consumed: totalPlanCarbs,
+                total_fat_consumed: totalPlanFat,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).set(newLog);
+        } else {
+            const logDoc = logQuery.docs[0];
+            const currentLog = logDoc.data();
+            dailyLogId = currentLog.id;
+
+            const updatedLog = {
+                total_calories_consumed: (currentLog.total_calories_consumed || 0) + totalPlanCalories,
+                total_protein_consumed: (currentLog.total_protein_consumed || 0) + totalPlanProtein,
+                total_carbs_consumed: (currentLog.total_carbs_consumed || 0) + totalPlanCarbs,
+                total_fat_consumed: (currentLog.total_fat_consumed || 0) + totalPlanFat,
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('user_daily_logs').doc(dailyLogId).update(updatedLog);
+        }
+
+        const mealEntryIds = [];
+        for (const meal of successfulMeals) {
+            const mealEntryId = nanoid(16);
+            const mealEntry = {
+                id: mealEntryId,
+                user_id: userId,
+                daily_log_id: dailyLogId,
+                food_item_id: meal.food_details.id,
+                meal_type: meal.meal_type,
+                servings: 1,
+                calories: Math.round(meal.nutrition.calories),
+                protein: meal.nutrition.protein,
+                carbs: meal.nutrition.carbs,
+                fat: meal.nutrition.fat,
+                is_from_recipe: true,
+                recipe_id: meal.recipe_id,
+                is_from_meal_plan: true,
+                consumed_at: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            await db.collection('meal_entries').doc(mealEntryId).set(mealEntry);
+            mealEntryIds.push(mealEntryId);
+        }
+
+        return h.response({
+            status: 'success',
+            message: `Meal plan berhasil ditambahkan. ${successfulMeals.length} dari ${mealTypes.length} meal berhasil diproses.`,
+            data: {
+                dailyLogId,
+                mealEntryIds,
+                processed_meals: results,
+                total_nutrition: {
+                    calories: Math.round(totalPlanCalories),
+                    protein: parseFloat(totalPlanProtein.toFixed(2)),
+                    carbs: parseFloat(totalPlanCarbs.toFixed(2)),
+                    fat: parseFloat(totalPlanFat.toFixed(2))
+                }
+            }
+        }).code(201);
+
+    } catch (error) {
+        console.error('Add full meal plan error:', error);
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const addMealFromSuggestion = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { 
+            recipe_id,
+            meal_type, 
+            servings = 1,
+            log_date 
+        } = request.payload;
+
+        if (!recipe_id || !meal_type || !log_date) {
+            return h.response({
+                status: 'fail',
+                message: 'Recipe ID, meal type, dan log date wajib diisi'
+            }).code(400);
+        }
+
+        if (!['breakfast', 'lunch', 'dinner', 'snack'].includes(meal_type)) {
+            return h.response({
+                status: 'fail',
+                message: 'Meal type harus salah satu dari: breakfast, lunch, dinner, snack'
+            }).code(400);
+        }
+
+        const tempRequest = {
+            ...request,
+            payload: {
+                recipe_id,
+                meal_type,
+                servings,
+                log_date
+            }
+        };
+
+        return await addMealFromPlan(tempRequest, h);
+
+    } catch (error) {
+        console.error('Add meal from suggestion error:', error);
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
+const getMealEntriesUpdated = async (request, h) => {
+    try {
+        const userId = request.user.uid;
+        const { log_date, meal_type } = request.query;
+
+        let query = db.collection('meal_entries').where('user_id', '==', userId);
+
+        if (log_date) {
+            const logQuery = await db.collection('user_daily_logs')
+                .where('user_id', '==', userId)
+                .where('log_date', '==', log_date)
+                .get();
+
+            if (!logQuery.empty) {
+                const dailyLogId = logQuery.docs[0].data().id;
+                query = query.where('daily_log_id', '==', dailyLogId);
+            } else {
+                return h.response({
+                    status: 'success',
+                    data: {
+                        meal_entries: []
+                    }
+                }).code(200);
+            }
+        }
+
+        if (meal_type) {
+            query = query.where('meal_type', '==', meal_type);
+        }
+
+        const snapshot = await query.get();
+        const mealEntries = [];
+
+        for (const doc of snapshot.docs) {
+            const mealData = doc.data();
+            let foodData = null;
+
+            if (mealData.is_from_recipe && mealData.recipe_id) {
+                try {
+                    const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${mealData.recipe_id}`;
+                    const response = await axios.get(mlEndpoint, {
+                        timeout: 10000,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        }
+                    });
+
+                    if (response.data) {
+                        const recipeData = response.data;
+                        const getFirstImageUrl = (inputString) => {
+                            if (!inputString || typeof inputString !== 'string') {
+                                return null;
+                            }
+                            
+                            const cleanInput = inputString.replace(/\\\//g, '/');
+                            const imageUrls = cleanInput.split(/,\s*(?=https?:\/\/)/);
+                            const firstUrl = imageUrls[0];
+                            
+                            if (firstUrl && firstUrl.trim()) {
+                                return firstUrl.trim().replace(/^"|"$/g, '');
+                            }
+                            
+                            return null;
+                        };
+
+                        foodData = {
+                            id: `recipe_${mealData.recipe_id}`,
+                            food_name: recipeData.Name || 'Unknown Recipe',
+                            calories_per_serving: Math.round(recipeData.Calories || 0),
+                            protein_per_serving: parseFloat((recipeData.ProteinContent || 0).toFixed(2)),
+                            carbs_per_serving: parseFloat((recipeData.CarbohydrateContent || 0).toFixed(2)),
+                            fat_per_serving: parseFloat((recipeData.FatContent || 0).toFixed(2)),
+                            serving_size: recipeData.ServingSize || 1,
+                            serving_unit: recipeData.ServingUnit || "Porsi",
+                            image_url: getFirstImageUrl(recipeData.Image),
+                            is_recipe: true,
+                            recipe_id: mealData.recipe_id
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error fetching recipe details for meal entry:', error);
+                    foodData = {
+                        id: mealData.food_item_id,
+                        food_name: 'Recipe (Detail tidak dapat dimuat)',
+                        calories_per_serving: Math.round(mealData.calories / mealData.servings),
+                        protein_per_serving: parseFloat((mealData.protein / mealData.servings).toFixed(2)),
+                        carbs_per_serving: parseFloat((mealData.carbs / mealData.servings).toFixed(2)),
+                        fat_per_serving: parseFloat((mealData.fat / mealData.servings).toFixed(2)),
+                        serving_size: 1,
+                        serving_unit: "Porsi",
+                        image_url: null,
+                        is_recipe: true,
+                        recipe_id: mealData.recipe_id
+                    };
+                }
+            } else {
+                let foodDoc = await db.collection('food_items').doc(mealData.food_item_id).get();
+
+                if (!foodDoc.exists) {
+                    const customFoodSnapshot = await db.collection('user_custom_foods')
+                        .where('id', '==', mealData.food_item_id)
+                        .get();
+                    
+                    if (!customFoodSnapshot.empty) {
+                        foodData = customFoodSnapshot.docs[0].data();
+                    }
+                } else {
+                    foodData = foodDoc.data();
+                }
+            }
+
+            mealEntries.push({
+                ...mealData,
+                food_details: foodData
+            });
+        }
+
+        mealEntries.sort((a, b) => new Date(b.consumed_at) - new Date(a.consumed_at));
+
+        return h.response({
+            status: 'success',
+            data: {
+                meal_entries: mealEntries
+            }
+        }).code(200);
+
+    } catch (error) {
+        console.error('Get meal entries error:', error);
+        return h.response({
+            status: 'error',
+            message: error.message
+        }).code(500);
+    }
+};
+
 module.exports = {
     createMealEntry,
     getMealEntries,
@@ -1020,5 +1582,9 @@ module.exports = {
     deleteMealEntry,
     generateMealPlan,
     getMealDetailsByRecipeId,
-    getMealSuggestions
+    getMealSuggestions,
+    addMealFromPlan,
+    addFullMealPlan,
+    addMealFromSuggestion,
+    getMealEntriesUpdated
 };
