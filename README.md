@@ -1,54 +1,54 @@
 <h1 align="center"><b>Kalkulori</b>: Sistem Rekomendasi Makanan</h1>
 <div align="center">
   <img src="./public/Kalkulori-LOGO-Text.png" width="300" alt="Logo Kalkulori" />
-  <h4>Aplikasi web rekomendasi makanan menggunakan pendekatan berbasis konten dengan Scikit-Learn, FastAPI, dan TensorFlow.</h4>
+  <h4>Backend API untuk aplikasi rekomendasi makanan dengan manajemen profil pengguna, tracking kalori, dan sistem rekomendasi berbasis machine learning.</h4>
 </div>
 
 ---
 
 ## ℹ️ Info Umum
 
-📌 **Kalkulori** adalah sistem rekomendasi makanan cerdas yang dirancang untuk membantu pengguna mencapai tujuan diet mereka dengan menyediakan rencana makan dan saran makanan yang dipersonalisasi. Di dunia yang makin peduli kesehatan saat ini, menjaga pola makan seimbang sangat penting. Proyek ini memanfaatkan *machine learning* untuk menawarkan rekomendasi yang tepat, mengatasi keterbatasan sistem rekomendasi diet yang canggih.
+📌 **Backend Kalkulori** adalah service RESTful yang menyediakan infrastruktur backend untuk aplikasi tracking kalori dan rekomendasi makanan. API ini dibangun menggunakan **Hapi.js** framework dengan integrasi **Firebase** untuk autentikasi dan penyimpanan data, serta dilengkapi dengan fitur *machine learning* untuk rekomendasi makanan yang personal.
 
-🔍 Sistem ini menggunakan **pendekatan berbasis konten**, yang berarti sistem menganalisis kandungan nutrisi, bahan, dan kata kunci resep untuk membuat rekomendasi. Pendekatan ini sangat efektif karena:
-* 🎯 Tidak memerlukan data dari pengguna lain untuk memulai.
-* 💡 Memberikan rekomendasi yang sangat relevan dengan pengguna individu.
-* ❄️ Membantu menghindari masalah (*cold start*) yang sering ditemukan dalam sistem penyaringan kolaboratif.
-* 📝 Menawarkan transparansi dalam rekomendasinya.
+🔍 Sistem backend ini berfungsi sebagai **penghubung antara client dan machine learning models**, yang memproses data pengguna dan memberikan rekomendasi makanan berdasarkan preferensi dan target kalori. Backend ini dirancang untuk:
+* 🎯 Menyediakan API yang scalable dan secure untuk aplikasi mobile/web.
+* 💡 Mengelola data pengguna, profil, dan riwayat konsumsi makanan.
+* ❄️ Mengintegrasikan model *machine learning* untuk rekomendasi yang personal.
+* 📝 Menyediakan sistem autentikasi dan otorisasi yang *robust*.
 
 ### ⚠️ Tantangan yang Dihadapi
 
-Meskipun penyaringan berbasis konten memiliki banyak keuntungan, sistem ini juga datang dengan tantangan, seperti:
-* **🔄 Kurangnya kebaruan dan keragaman**: Sistem mungkin merekomendasikan item yang sangat mirip dengan yang sudah disukai pengguna, berpotensi membatasi paparan makanan baru.
-* **⚙️ Skalabilitas**: Menangani sejumlah besar item dan fitur mereka bisa menjadi intensif secara komputasi.
-* **📊 Kualitas atribut**: Rekomendasi sangat bergantung pada keakuratan dan konsistensi atribut makanan (kata kunci, info gizi).
+Dalam pengembangan backend untuk sistem rekomendasi makanan, beberapa tantangan utama yang dihadapi meliputi:
+* **🔄 Integrasi ML Models**: Mengintegrasikan model machine learning dengan API backend untuk memberikan rekomendasi real-time yang cepat dan akurat.
+* **⚙️ Data Management**: Mengelola dan menyinkronkan data makanan yang besar (50.000+ items) dengan performa query yang optimal.
+* **📊 User Data Privacy**: Memastikan keamanan data personal pengguna seperti profil kesehatan, riwayat konsumsi, dan preferensi diet.
+* **🚀 Scalability**: Merancang arsitektur yang dapat menangani pertumbuhan jumlah pengguna dan request concurrent.
 
 ---
 
 ## ✨ Fitur
 
-Kalkulori menawarkan fitur-fitur utama berikut melalui *endpoint* API-nya:
+Backend Kalkulori menyediakan fitur-fitur utama berikut melalui *endpoint* RESTful API-nya:
 
-### 🍽️ Suggestion Meal
-* **🔍 Saran Berbasis Kata Kunci**: Merekomendasikan resep berdasarkan **kata kunci** yang diberikan pengguna (misalnya, 'tinggi protein', 'asia', 'vegetarian') dan **jumlah kalori target**.
-* **📊 Pengelompokan Kalori (*Calorie Binning*)**: Memanfaatkan model TensorFlow yang telah dilatih sebelumnya untuk memprediksi kelompok kalori yang paling mungkin untuk resep, membantu dalam menemukan resep yang mendekati target kalori.
-* **🎚 Peringkat & Randomisasi Cerdas**: Memberi peringkat saran berdasarkan skor kecocokan kata kunci dan probabilitas kalori yang diprediksi, kemudian mengambil sampel secara acak dari kumpulan kandidat teratas untuk memastikan keragaman.
+### 🔐 Authentication & User Management
+* **👤 Register & Login**: Sistem autentikasi menggunakan Firebase Authentication dengan JWT token management untuk keamanan maksimal.
+* **🔒 Secure Endpoints**: Middleware autentikasi untuk melindungi endpoint yang memerlukan login pengguna.
+* **📋 Profil Management**: CRUD operations untuk data profil pengguna termasuk informasi kesehatan, target diet, dan preferensi makanan.
+  
+### 🍽️ Food Database & Search
+* **📊 Database Makanan**: Akses ke 50.000+ data makanan dengan informasi nutrisi yang komprehensif melalui RESTful API.
+* **🔍 Smart Search**: Algoritma pencarian dengan fuzzy matching untuk membantu pengguna menemukan makanan dengan mudah.
+* **➕ Food Management**: Endpoint untuk menambah, update, dan mengelola data makanan dalam database.
 
-### 📅 Meal Plan
-* **🎯 Meal Plan yang Dipersonalisasi**: Menghasilkan rencana makan sehari penuh (Sarapan, Makan Siang, Makan Malam, ditambah makanan tambahan opsional) berdasarkan **target total kalori** yang ditentukan.
-* **⚖️ Toleransi Kalori**: Memungkinkan persentase toleransi yang dapat dikonfigurasi di sekitar target kalori untuk menemukan kombinasi makanan yang sesuai.
-* **🏆 Pemilihan Berbasis Prioritas**: Resep diprioritaskan berdasarkan jenis makanan (Sarapan, Makan Siang, Makan Malam) dan kata kunci spesifik/umum untuk memastikan pilihan yang relevan.
-* **📋Output Resep Terperinci**: Setiap makanan dalam rencana menyertakan detail resep yang komprehensif seperti bahan, waktu memasak, dan rincian nutrisi lengkap.
+### 📈 Meal Tracking & Logging
+* **📝 Daily Logging**: API untuk mencatat konsumsi makanan harian dengan tracking kalori dan nutrisi real-time.
+* **📊 Nutritional Analysis**: Endpoint untuk menganalisis intake nutrisi harian dan memberikan ringkasan kesehatan.
+* **📅 Historical Data**: Penyimpanan dan akses data historis untuk analisis trend konsumsi jangka panjang.
 
-### 🔎 Search Meal
-* **🔤 Pencarian Nama Resep**: Memungkinkan pengguna mencari resep berdasarkan **nama** sebagian atau penuh.
-* **📝 Detail Resep Komprehensif**: Menyediakan detail lengkap untuk setiap resep melalui ID-nya, termasuk bahan, waktu memasak, dan semua informasi nutrisi.
-
----
-
-## 📋 Deskripsi
-
-Kalkulori Backend API adalah service RESTful yang menyediakan infrastruktur backend untuk aplikasi tracking kalori dan rekomendasi makanan. API ini dibangun menggunakan **Hapi.js** framework dengan integrasi **Firebase** untuk autentikasi dan penyimpanan data, serta dilengkapi dengan fitur machine learning untuk rekomendasi makanan yang personal.
+### 🤖 ML-Powered Recommendations
+* **🎯 Meal Suggestions**: Integration dengan machine learning models untuk memberikan rekomendasi makanan berdasarkan profil dan target pengguna.
+* **📅 Meal Plan Generation**: API untuk menghasilkan rencana makan lengkap dengan distribusi kalori dan nutrisi yang optimal.
+* **⚖️ Calorie Management**: Sistem untuk menghitung dan menyesuaikan target kalori berdasarkan BMR dan TDEE pengguna.
 
 ---
 
