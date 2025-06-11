@@ -1,4 +1,4 @@
-<h1 align="center"><b>Kalkulori</b>: Sistem Rekomendasi Makanan</h1>
+<h1 align="center"><b>Kalkulori</b>: Aplikasi Penghitung Kalori</h1>
 <div align="center">
   <img src="./public/Kalkulori-LOGO-Text.png" width="300" alt="Logo Kalkulori" />
   <h4>Backend API untuk aplikasi rekomendasi makanan dengan manajemen profil pengguna, tracking kalori, dan sistem rekomendasi berbasis machine learning.</h4>
