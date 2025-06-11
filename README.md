@@ -50,59 +50,39 @@ Kalkulori menawarkan fitur-fitur utama berikut melalui *endpoint* API-nya:
 
 Kalkulori Backend API adalah service RESTful yang menyediakan infrastruktur backend untuk aplikasi tracking kalori dan rekomendasi makanan. API ini dibangun menggunakan **Hapi.js** framework dengan integrasi **Firebase** untuk autentikasi dan penyimpanan data, serta dilengkapi dengan fitur machine learning untuk rekomendasi makanan yang personal.
 
-## ✨ Fitur Utama
+---
+
+## 🛠️ Pengembangan
 
 ### 🔐 Autentikasi & Otorisasi
-- **Firebase Authentication** - Login/Register dengan email dan password
-- **JWT Token Management** - Secure token-based authentication
-- **Token Verification** - Middleware untuk proteksi endpoint
-- **Session Management** - Logout dengan token revocation
+Sistem autentikasi Kalkulori dibangun menggunakan Firebase Authentication yang terintegrasi dengan JWT token management untuk keamanan maksimal. Pengguna dapat melakukan registrasi akun baru dengan email dan password melalui endpoint `/api/auth/register`, yang secara otomatis membuat profil pengguna di database. Proses login dilakukan melalui `/api/auth/login` yang mengembalikan access token dan refresh token untuk sesi yang aman.
+
+Setiap request ke endpoint yang memerlukan autentikasi akan diverifikasi melalui middleware authMiddleware yang memvalidasi JWT token. Token verification endpoint `/api/auth/verify-token` memungkinkan aplikasi client untuk memvalidasi status login pengguna secara real-time. Sistem juga menyediakan logout functionality yang tidak hanya menghapus token dari client, tetapi juga melakukan revocation di server untuk mencegah penggunaan token yang sudah expired.
 
 ### 👤 Manajemen Profil Pengguna
-- **User Profile Management** - CRUD operasi profil pengguna
-- **Personal Information** - Tracking data pribadi untuk kalkulasi kalori
-- **Preference Settings** - Pengaturan preferensi diet dan tujuan
+Fitur manajemen profil pengguna memberikan kontrol penuh kepada user untuk mengatur informasi personal mereka. Endpoint `/api/users/profile` dengan method GET memungkinkan pengambilan data profil lengkap termasuk informasi dasar. Update profil dilakukan melalui PUT request ke endpoint yang sama, dengan validasi data untuk memastikan informasi yang disimpan akurat dan konsisten.
+
+Profil pengguna menyimpan data kritis seperti usia, jenis kelamin, tinggi badan, berat badan, tingkat aktivitas, dan target berat badan yang akan berpengaruh ke tujuan diet (menurunkan berat badan, mempertahankan, atau menambah). Data ini digunakan untuk kalkulasi BMR (Basal Metabolic Rate) dan TDEE (Total Daily Energy Expenditure) yang menjadi dasar rekomendasi kalori harian. Sistem juga tracking perubahan profil untuk analisis progress pengguna dari waktu ke waktu.
 
 ### 🍽️ Database Makanan
-- **Food Database** - Database lengkap informasi nutrisi makanan
-- **Custom Foods** - Pengguna dapat menambah makanan kustom
-- **Food Search** - Pencarian makanan berdasarkan nama atau kategori
-- **Nutrition Information** - Detail lengkap nilai gizi per makanan
+Database makanan Kalkulori menyediakan akses ke 50.000+ data makanan dengan informasi nutrisi yang komprehensif. Endpoint `/api/foods` memberikan akses ke seluruh database makanan, sementara `/api/foods/{foodId}` memungkinkan pengambilan detail spesifik suatu makanan. Admin atau pengguna dengan privilege tertentu dapat menambahkan makanan baru melalui POST request ke `/api/foods` dengan validasi data nutrisi yang ketat.
 
-### 📊 Tracking Makanan
-- **Meal Entries** - Pencatatan konsumsi makanan harian
-- **Daily Logs** - Ringkasan nutrisi harian
-- **Meal Categories** - Kategorisasi makanan (sarapan, makan siang, makan malam, snack)
-- **Portion Control** - Tracking porsi dan serving size
+Fitur pencarian makanan `/api/search` menggunakan algoritma fuzzy matching untuk membantu pengguna menemukan makanan dengan mudah, bahkan dengan typo atau variasi nama. Sistem juga mendukung penambahan makanan dari hasil pencarian eksternal melalui `/api/search/add`, yang mengintegrasikan data dari sumber eksternal ke database lokal. Update dan delete operations tersedia untuk maintenance data makanan, dengan logging untuk audit trail.
 
-### 🤖 Rekomendasi Cerdas
-- **Meal Suggestions** - Saran makanan berdasarkan profil pengguna
-- **Meal Plan Generation** - Generate rencana makan otomatis
-- **Smart Recommendations** - Rekomendasi berbasis machine learning
-- **Recipe Details** - Detail resep lengkap dengan bahan dan instruksi
+### 📊 Meal Tracking & Logging
+Sistem meal tracking memungkinkan pengguna mencatat konsumsi makanan harian melalui endpoint `/api/meals`. Setiap meal entry mencakup informasi makanan yang dikonsumsi, jumlah porsi, waktu konsumsi, dan kategori meal (breakfast, lunch, dinner, snack). Data ini diproses secara real-time untuk menghitung total intake nutrisi harian.
 
-## 🏗️ Arsitektur
+Endpoint `/api/logs/{log_date}` menyediakan ringkasan nutrisi harian yang komprehensif, termasuk total kalori, breakdown makronutrient, persentase target harian yang tercapai, dan analisis kualitas diet. Sistem juga menyimpan historical data untuk trend analysis dan progress tracking jangka panjang. Update dan delete functionality tersedia untuk koreksi data entry yang salah.
 
-```
-kalkulori-be/
-├── src/
-│   ├── controllers/          # Business logic handlers
-│   │   ├── authController.js
-│   │   ├── userController.js
-│   │   ├── foodController.js
-│   │   └── mealController.js
-│   ├── middleware/           # Custom middleware
-│   │   └── auth.js
-│   ├── database/            # Database configurations
-│   ├── scripts/             # Utility scripts
-│   ├── routes.js            # API route definitions
-│   └── server.js           # Main server file
-├── package.json
-└── README.md
-```
+### 🤖 Smart Meal Recommendations
+Fitur rekomendasi cerdas menggunakan machine learning algorithm untuk memberikan saran makanan yang personal dan relevan. Endpoint `/api/meals/`suggestion menganalisis riwayat konsumsi, preferensi diet, target nutrisi, dan defisiensi nutrisi untuk menghasilkan rekomendasi makanan yang optimal. Algoritma mempertimbangkan variasi, keseimbangan nutrisi, dan preferensi personal pengguna.
 
-## 🛠️ Teknologi
+Meal plan generation `/api/meal-plans/generate` menciptakan rencana makan lengkap untuk periode tertentu (harian, mingguan, atau bulanan) berdasarkan profil pengguna. Sistem mempertimbangkan target kalori, distribusi makronutrient, variasi makanan, dan constraint diet khusus. Generated meal plan dapat langsung ditambahkan ke meal entries melalui `/api/meal-plans/add-full-plan` atau ditambahkan per-meal melalui `/api/meal-plans/add-meal`.
 
+---
+
+## 💻 Teknologi
+Proyek ini dikembangkan menggunakan teknologi-teknologi berikut:
 - **Framework**: Hapi.js v21.4.0
 - **Database**: Firebase Firestore
 - **Authentication**: Firebase Admin SDK v13.4.0
@@ -111,6 +91,8 @@ kalkulori-be/
 - **Data Processing**: Papa Parse v5.5.3
 - **Development**: Nodemon v3.1.10
 - **Runtime**: Node.js >=16.0.0
+
+---
 
 ## 📚 API Endpoints
 
@@ -130,52 +112,46 @@ PUT    /api/users/profile        # Update profil pengguna
 
 ### Manajemen Makanan
 ```http
-GET    /api/foods                # Daftar semua makanan
+GET    /api/foods                # Daftar makanan dengan limitation dan pagination
 GET    /api/foods/{id}           # Detail makanan berdasarkan ID
 POST   /api/foods                # Tambah makanan baru (admin)
-PUT    /api/foods/{id}           # Update makanan
-DELETE /api/foods/{id}           # Hapus makanan
 GET    /api/search               # Pencarian makanan
-POST   /api/search/add           # Tambah makanan dari hasil pencarian
-```
-
-### Makanan Kustom Pengguna
-```http
-GET    /api/users/foods          # Daftar makanan kustom pengguna
-POST   /api/users/foods          # Tambah makanan kustom baru
+POST   /api/search/add           # Tambah makanan ke daily log dari hasil pencarian
 ```
 
 ### Tracking Makanan
 ```http
-GET    /api/meals                # Daftar meal entries pengguna
-POST   /api/meals                # Tambah meal entry baru
-PUT    /api/meals/{id}           # Update meal entry
+GET    /api/meals                # Daftar makanan pengguna
+POST   /api/meals                # Tambah makanan ke daily log dari add-page
 DELETE /api/meals/{id}           # Hapus meal entry
-GET    /api/meals/updated        # Meal entries dengan format terbaru
 ```
 
 ### Rekomendasi & Meal Plan
 ```http
-GET    /api/meals/suggestion           # Saran makanan
-POST   /api/meals/suggestion/add       # Tambah dari saran
+GET    /api/meals/suggestion           # Saran makanan berdasarkan tipe makanan user
+POST   /api/meals/suggestion/add       # Tambah makanan ke daily log dari saran
 GET    /api/meal-plans/generate        # Generate meal plan
 POST   /api/meal-plans/add-meal        # Tambah makanan dari meal plan
 POST   /api/meal-plans/add-full-plan   # Tambah full meal plan
-GET    /api/meals/{recipeId}/details   # Detail resep
+GET    /api/meals/{recipeId}/details   # Detail makanan
 ```
 
 ### Daily Logs
 ```http
+GET    /api/logs/                # Log user
 GET    /api/logs/{date}          # Log harian berdasarkan tanggal
 ```
 
-### Health Check
+### Makanan Kustom Pengguna [SOON]
 ```http
-GET    /api/health               # Status kesehatan API
-GET    /api                      # Dokumentasi API
+GET    /api/users/foods          # Daftar makanan kustom pengguna [SOON]
+POST   /api/users/foods          # Tambah makanan kustom baru [SOON]
 ```
 
-## 🚀 Quick Start
+---
+
+## ⚡ Setup
+Untuk menjalankan proyek ini secara lokal, ikuti ketentuan dan langkah-langkah berikut:
 
 ### Prerequisites
 - Node.js (>= 16.0.0)
@@ -194,39 +170,66 @@ GET    /api                      # Dokumentasi API
    ```bash
    npm install
    ```
+   
+3. **Setup Firebase Project**
+   ```http
+   https://console.firebase.google.com/
+   ```
+   
+   - Ikuti langkah-langkah yang diminta Firebase ketika membuat New Project.
+   - Aktifkan *Authentication* dan *Firestore Database* di Project Firebase.
+   - Project Overview -> Web App -> Register App.
 
-3. **Environment Setup**
+
+   ```bash
+   npm install firebase
+   ```
+   
+   - Continue to console.
+   - Project Settings -> Service accounts -> Pilih Node.js sebagai Admin SDK -> Generate new private key.
+   
+4. **Environment Setup**
+
+   Isi file `serviceAccount.json` di `./src/config/private/` directory dengan file service account yang baru saja di generate/download seperti dibawah ini:
+   ```json
+   {
+      "type": "service_account",
+      "project_id": "your-firebase-project-id",
+      "private_key_id": "abcd1234efgh5678ijkl9012mnop3456qrst7890",
+      "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",
+      "client_email": "firebase-adminsdk-xyz@your-project.iam.gserviceaccount.com",
+      "client_id": "123456789012345678901",
+      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+      "token_uri": "https://oauth2.googleapis.com/token",
+      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-xyz%40your-project.iam.gserviceaccount.com",
+      "universe_domain": "googleapis.com"
+   }
+   ```
    
    Buat file `.env` di root directory:
    ```env
    PORT=9000
    NODE_ENV=development
-   
-   # Firebase Configuration
-   FIREBASE_PROJECT_ID=your-project-id
-   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-   FIREBASE_CLIENT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
-   
-   # JWT Secret
    JWT_SECRET=your-super-secret-jwt-key
    ```
 
-4. **Import Food Data (Optional)**
+5. **Import Food Data (Optional)**
    ```bash
    npm run import-foods
    ```
 
-5. **Start Development Server**
+6. **Start Development Server**
    ```bash
    npm run dev
    ```
 
-6. **Start Production Server**
+7. **Start Production Server**
    ```bash
    npm start
    ```
 
-## 🔧 Development Scripts
+### 🔧 Development Scripts
 
 ```bash
 # Development dengan auto-reload
@@ -242,17 +245,18 @@ npm run import-csv
 npm run import-foods
 ```
 
+---
+
 ## 📖 API Documentation
 
 Setelah server berjalan, kunjungi:
-- **Health Check**: `http://localhost:9000/api/health`
 - **API Documentation**: `http://localhost:9000/api`
 
 ### Authentication Headers
 
 Untuk endpoint yang memerlukan autentikasi, sertakan header:
 ```http
-Authorization: Bearer <your-firebase-id-token>
+Authorization: Bearer <user-token>
 ```
 
 ### Response Format
@@ -263,7 +267,7 @@ API menggunakan format response yang konsisten:
 ```json
 {
   "status": "success",
-  "message": "Operation completed successfully",
+  "message": "Success description",
   "data": { ... }
 }
 ```
@@ -276,6 +280,8 @@ API menggunakan format response yang konsisten:
 }
 ```
 
+---
+
 ## 🔒 Security Features
 
 - **Firebase Authentication** - Secure user authentication
@@ -283,6 +289,8 @@ API menggunakan format response yang konsisten:
 - **CORS Configuration** - Cross-origin request handling
 - **Input Validation** - Request payload validation
 - **Error Handling** - Comprehensive error responses
+
+---
 
 ## 🚀 Deployment
 
@@ -297,30 +305,4 @@ PORT=9000
 - **Development**: `localhost:9000`
 - **Production**: `0.0.0.0:9000`
 
-## 🤝 Contributing
-
-1. Fork repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open Pull Request
-
-## 📄 License
-
-This project is licensed under the ISC License.
-
-## 👥 Team
-
-Kalkulori Backend API dikembangkan oleh tim Capstone FEBE Kalkulori.
-
-## 📞 Support
-
-Jika Anda mengalami masalah atau memiliki pertanyaan, silakan:
-- Buat issue di repository ini
-- Hubungi tim development
-
 ---
-
-<div align="center">
-  Made with ❤️ for healthier eating habits
-</div>
