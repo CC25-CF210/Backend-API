@@ -248,36 +248,43 @@ const routes = [
                 message: 'Kalkulori API Documentation',
                 endpoints: {
                     auth: {
-                        'POST /api/auth/register': 'Register new user with profile',
-                        'POST /api/auth/login': 'Login existing user',
-                        'POST /api/auth/verify-token': 'Verify ID token',
-                        'POST /api/auth/logout': 'Logout user and revoke tokens (requires auth)'
+                        'POST /api/auth/register': 'Registrasi pengguna baru',
+                        'POST /api/auth/login': 'Login pengguna',
+                        'POST /api/auth/verify-token': 'Verifikasi token',
+                        'POST /api/auth/logout': 'Logout pengguna (requires auth)'
                     },
                     users: {
-                        'GET /api/users/profile': 'Get user profile (requires auth)',
-                        'PUT /api/users/profile': 'Update user profile (requires auth)'
+                        'GET /api/users/profile': 'Ambil profil pengguna (requires auth)',
+                        'PUT /api/users/profile': 'Update profil pengguna (requires auth)'
                     },
                     foods: {
-                        'GET /api/foods': 'Get all foods',
-                        'GET /api/foods/{id}': 'Get food by ID',
-                        'POST /api/foods': 'Create food (requires auth)',
-                        'PUT /api/foods/{id}': 'Update food (requires auth)',
-                        'DELETE /api/foods/{id}': 'Delete food (requires auth)'
-                    },
-                    customFoods: {
-                        'GET /api/users/foods': 'Get user custom foods (requires auth)',
-                        'POST /api/users/foods': 'Create user custom food (requires auth)'
+                        'GET /api/foods': 'Daftar makanan dengan limitation dan pagination',
+                        'GET /api/foods/{id}': 'Detail makanan berdasarkan ID',
+                        'POST /api/foods': 'Tambah makanan baru (admin only) (requires auth)',
+                        'GET /api/search': 'Pencarian makanan',
+                        'DELETE /api/foods/{id}': 'Tambah makanan ke daily log dari hasil pencarian (requires auth)'
                     },
                     meals: {
-                        'GET /api/meals': 'Get meal entries (requires auth)',
-                        'POST /api/meals': 'Create meal entry (requires auth)',
-                        'PUT /api/meals/{id}': 'Update meal entry (requires auth)',
-                        'DELETE /api/meals/{id}': 'Delete meal entry (requires auth)',
-                        'GET /api/meals/generate-plan': 'Generate meal plan using ML (requires auth)'
+                        'GET /api/meals': 'Daftar makanan pengguna (requires auth)',
+                        'POST /api/meals': 'Tambah makanan ke daily log dari add-page (requires auth)',
+                        'DELETE /api/meals/{id}': 'Hapus meal entry (requires auth)',
+                    },
+                    recommendplan: {
+                        'GET /api/meals/suggestion': 'Saran makanan berdasarkan tipe makanan user (requires auth)',
+                        'POST /api/meals/suggestion/add': 'Tambah makanan ke daily log dari saran (requires auth)',
+                        'GET /api/meal-plans/generate': 'Generate meal plan (requires auth)',
+                        'GET /api/meal-plans/add-meal': 'Tambah makanan dari meal plan (requires auth)',
+                        'POST /api/meal-plans/add-full-plan': 'Tambah full meal plan (requires auth)',
+                        'GET /api/meals/{recipeId}/details': 'Detail makanan (requires auth)',
                     },
                     logs: {
-                        'GET /api/logs/{date}': 'Get daily log (requires auth)'
-                    }
+                        'GET /api/logs': 'Log user (requires auth)',
+                        'GET /api/logs/{date}': 'Log harian berdasarkan tanggal (requires auth)'
+                    },
+                    customFoods: {
+                        'GET /api/users/foods': 'Daftar makanan kustom pengguna (SOON)',
+                        'POST /api/users/foods': 'Tambah makanan kustom baru (SOON)'
+                    },
                 }
             }).code(200);
         }
