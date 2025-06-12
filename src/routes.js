@@ -6,25 +6,21 @@ const authMiddleware = require('./middleware/auth');
 
 const routes = [
     // === AUTH ROUTES ===
-    // Register new user with profile
     {
         method: 'POST',
         path: '/api/auth/register',
         handler: authController.register
     },
-    // Login existing user
     {
         method: 'POST',
         path: '/api/auth/login',
         handler: authController.login
     },
-    // Verify ID token
     {
         method: 'POST',
         path: '/api/auth/verify-token',
         handler: authController.verifyToken
     },
-    // Logout user (revoke tokens)
     {
         method: 'POST',
         path: '/api/auth/logout',
@@ -35,7 +31,6 @@ const routes = [
     },
 
     // === USER PROFILE ROUTES ===
-    // Get user profile
     {
         method: 'GET',
         path: '/api/users/profile',
@@ -44,7 +39,6 @@ const routes = [
             pre: [{ method: authMiddleware }]
         }
     },
-    // Update user profile
     {
         method: 'PUT',
         path: '/api/users/profile',
