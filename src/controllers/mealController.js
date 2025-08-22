@@ -678,7 +678,7 @@ const getMealDetailsByRecipeId = async (request, h) => {
             return result.length > 0 ? result : null;
         };
 
-        const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${recipeId}`;
+        const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${recipeId}`;
         
         const response = await axios.get(mlEndpoint, {
             timeout: 30000,
@@ -1052,7 +1052,7 @@ const addMealFromPlan = async (request, h) => {
             return null;
         };
 
-        const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${recipe_id}`;
+        const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${recipe_id}`;
         
         let mealData;
         try {
@@ -1232,7 +1232,7 @@ const addFullMealPlan = async (request, h) => {
             const meal = meal_plan[mealType];
             
             try {
-                const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${meal.RecipeId}`;
+                const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${meal.RecipeId}`;
                 const response = await axios.get(mlEndpoint, {
                     timeout: 30000,
                     headers: {
@@ -1477,7 +1477,7 @@ const getMealEntriesUpdated = async (request, h) => {
 
             if (mealData.is_from_recipe && mealData.recipe_id) {
                 try {
-                    const mlEndpoint = `http://3.24.217.142:8000/recipe_detail/${mealData.recipe_id}`;
+                    const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${mealData.recipe_id}`;
                     const response = await axios.get(mlEndpoint, {
                         timeout: 10000,
                         headers: {
