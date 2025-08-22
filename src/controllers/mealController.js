@@ -500,7 +500,7 @@ const generateMealPlan = async (request, h) => {
                     calorie_tolerance_percent: tolerancePercent.toString()
                 });
 
-                const mlEndpoint = `http://35.171.26.192/generate-meal-plan/?${mlParams}`;
+                const mlEndpoint = `http://3.88.224.152:8001/generate-meal-plan/?${mlParams}`;
                 
                 const response = await axios.get(mlEndpoint, {
                     timeout: 30000,
@@ -860,7 +860,7 @@ const getMealSuggestions = async (request, h) => {
             top_n: '10'
         });
 
-        const mlEndpoint = `http://3.24.217.142:8000/recommend_recipes?${mlParams}`;
+        const mlEndpoint = `http://3.94.146.234/recommend_recipes?${mlParams}`;
 
         const getMealSuggestionsFromML = async (retryCount = 0) => {
             const maxRetries = 3;
