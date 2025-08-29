@@ -500,7 +500,7 @@ const generateMealPlan = async (request, h) => {
                     calorie_tolerance_percent: tolerancePercent.toString()
                 });
 
-                const mlEndpoint = `http://3.88.224.152:8001/generate-meal-plan/?${mlParams}`;
+                const mlEndpoint = `http://3.80.48.232:8001/generate-meal-plan/?${mlParams}`;
                 
                 const response = await axios.get(mlEndpoint, {
                     timeout: 30000,
@@ -678,7 +678,7 @@ const getMealDetailsByRecipeId = async (request, h) => {
             return result.length > 0 ? result : null;
         };
 
-        const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${recipeId}`;
+        const mlEndpoint = `http://54.81.19.218:8002/recipe_detail/${recipeId}`;
         
         const response = await axios.get(mlEndpoint, {
             timeout: 30000,
@@ -860,7 +860,7 @@ const getMealSuggestions = async (request, h) => {
             top_n: '10'
         });
 
-        const mlEndpoint = `http://3.94.146.234/recommend_recipes?${mlParams}`;
+        const mlEndpoint = `http://18.212.230.105/recommend_recipes?${mlParams}`;
 
         const getMealSuggestionsFromML = async (retryCount = 0) => {
             const maxRetries = 3;
@@ -1052,7 +1052,7 @@ const addMealFromPlan = async (request, h) => {
             return null;
         };
 
-        const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${recipe_id}`;
+        const mlEndpoint = `http://3.80.48.232:8002/recipe_detail/${recipe_id}`;
         
         let mealData;
         try {
@@ -1232,7 +1232,7 @@ const addFullMealPlan = async (request, h) => {
             const meal = meal_plan[mealType];
             
             try {
-                const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${meal.RecipeId}`;
+                const mlEndpoint = `http://3.80.48.232:8002/recipe_detail/${meal.RecipeId}`;
                 const response = await axios.get(mlEndpoint, {
                     timeout: 30000,
                     headers: {
@@ -1477,7 +1477,7 @@ const getMealEntriesUpdated = async (request, h) => {
 
             if (mealData.is_from_recipe && mealData.recipe_id) {
                 try {
-                    const mlEndpoint = `http://44.223.70.60:8002/recipe_detail/${mealData.recipe_id}`;
+                    const mlEndpoint = `http://54.81.19.218:8002/recipe_detail/${mealData.recipe_id}`;
                     const response = await axios.get(mlEndpoint, {
                         timeout: 10000,
                         headers: {

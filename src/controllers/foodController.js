@@ -480,7 +480,7 @@ const searchFoods = async (request, h) => {
                     top_n: '12'
                 });
 
-                const mlEndpoint = `http://44.223.70.60:8002/search?${mlParams}`;
+                const mlEndpoint = `http://54.81.19.218:8002/search?${mlParams}`;
                 
                 console.log('Calling ML search endpoint:', mlEndpoint);
                 
